@@ -28,6 +28,9 @@
     gridLineColor: '#4f4f4f',
     skyColor: '#9b9b9b',
     smoothing: 0.35,         // 0 to 1: how fast the view catches up with the phone (1 = no smoothing)
+    sensitivity: 1,          // Default phone-rotation sensitivity (1 = normal). Changed with the slider on the PC.
+    sensitivityMin: 0.2,
+    sensitivityMax: 3,
     peerPrefix: 'pcam-',     // Must be identical on both sides
     threeUrl: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
     peerUrl: 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'
@@ -222,7 +225,11 @@
       '#cam-cross-h{width:22px;height:2px}' +
       '#cam-cross-v{width:2px;height:22px}' +
       '#cam-hud{position:fixed;top:10px;left:10px;padding:6px 10px;background:rgba(0,0,0,0.5);color:#fff;' +
-      'font:14px/1.4 monospace;white-space:pre;border-radius:6px;pointer-events:none}'
+      'font:14px/1.4 monospace;white-space:pre;border-radius:6px;pointer-events:none}' +
+      '#cam-sens{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;' +
+      'gap:10px;padding:8px 12px;background:rgba(0,0,0,0.5);color:#fff;font:14px system-ui,sans-serif;border-radius:6px}' +
+      '#cam-sens input{width:220px;cursor:pointer}' +
+      '#cam-sens-value{min-width:4em;text-align:right;font-family:monospace}'
     );
 
     // ---- renderer and overlay ----
@@ -240,6 +247,16 @@
     const hud = document.createElement('div');
     hud.id = 'cam-hud';
     document.body.append(crossH, crossV, hud);
+
+    // Sensitivity slider (bottom center). H hides it together with the HUD.
+    const sensBox = document.createElement('div');
+    sensBox.id = 'cam-sens';
+    sensBox.innerHTML =
+      '<span>Sensitivity</span>' +
+      '<input id="cam-sens-slider" type="range" min="' + CONFIG.sensitivityMin + '" max="' + CONFIG.sensitivityMax +
+      '" step="0.05" value="' + CONFIG.sensitivity + '">' +
+      '<span id="cam-sens-value"></span>';
+    document.body.appendChild(sensBox);
 
     // ---- scene: gray sky, dark-gray baseplate with grid texture ----
     const scene = new THREE.Scene();
@@ -444,6 +461,7 @@
         'Phone: ' + phoneStatus + '\n' +
         'Pos: ' + player.x.toFixed(1) + ', ' + (player.feetY + eye).toFixed(1) + ', ' + player.z.toFixed(1) + '\n' +
         'FOV: ' + fovDeg + '  (+ / - to change)\n' +
+        'Sensitivity: ' + sensitivity.toFixed(2) + 'x  (slider at bottom)\n' +
         'WASD move, Space jump, C crouch, R reset, H hide HUD';
     }
 
@@ -490,6 +508,27 @@
       });
     });
 
+    // ---- sensitivity ----
+    let sensitivity = clamp(CONFIG.sensitivity, CONFIG.sensitivityMin, CONFIG.sensitivityMax);
+    const sensSlider = document.getElementById('cam-sens-slider');
+    const sensValue = document.getElementById('cam-sens-value');
+    const scaledTarget = new THREE.Quaternion();
+
+    function setSensitivity(value) {
+      sensitivity = clamp(value, CONFIG.sensitivityMin, CONFIG.sensitivityMax);
+      sensSlider.value = sensitivity;
+      sensValue.textContent = sensitivity.toFixed(2) + 'x';
+    }
+
+    sensSlider.addEventListener('input', function () {
+      setSensitivity(parseFloat(sensSlider.value));
+    });
+    // Hand keyboard focus back to the page so WASD and Space keep working after using the slider.
+    sensSlider.addEventListener('change', function () {
+      sensSlider.blur();
+    });
+    setSensitivity(sensitivity);
+
     // ---- controls ----
     function setFov(value) {
       fovDeg = clamp(value, CONFIG.fovMin, CONFIG.fovMax);
@@ -511,7 +550,9 @@
       } else if (e.key === '-' || e.key === '_') {
         setFov(fovDeg - 1);
       } else if (e.key === 'h' || e.key === 'H') {
-        hud.style.display = hud.style.display === 'none' ? '' : 'none';
+        const hide = hud.style.display !== 'none';
+        hud.style.display = hide ? 'none' : '';
+        sensBox.style.display = hide ? 'none' : '';
       }
     });
 
@@ -535,7 +576,10 @@
     // ---- render loop ----
     function frame(now) {
       update(now);
-      camera.quaternion.slerp(target, CONFIG.smoothing);
+      // Sensitivity scales how far the view turns away from forward for the same phone rotation.
+      scaledTarget.identity();
+      scaledTarget.slerp(target, sensitivity);
+      camera.quaternion.slerp(scaledTarget, CONFIG.smoothing);
       renderer.render(scene, camera);
       renderHud();
       requestAnimationFrame(frame);
