@@ -1,8 +1,8 @@
 /*
- * camera.js : phone-driven camera preview
+ * camera.js : phone-driven camera preview with PC movement
  *
- *   index.html          -> PC viewer. Shows a 3D baseplate scene. Its camera
- *                          turns the same way the connected phone is turned.
+ *   index.html          -> PC viewer. Phone rotation drives the view.
+ *                          WASD moves, Space jumps, C crouches, R resets.
  *   index.html?sensor   -> Phone sender. Streams the phone's motion sensors
  *                          to the PC viewer.
  */
@@ -15,7 +15,13 @@
                              // Override per session with ?fov=90 in the URL, or with the +/- keys.
     fovMin: 20,
     fovMax: 120,
-    eyeHeight: 6,            // Camera height above the baseplate
+    eyeHeight: 6,            // Standing eye height above the ground
+    crouchEyeHeight: 3,      // Eye height while crouching (hold C)
+    moveSpeed: 14,           // Units per second for WASD
+    crouchSpeedFactor: 0.5,  // Movement speed multiplier while crouching
+    jumpVelocity: 13,        // Initial upward speed of a jump (jump height is about 2.8 units)
+    gravity: 30,             // Downward acceleration while airborne
+    mapBound: 95,            // Player cannot leave the area inside this distance from the center
     baseplateSize: 1000,     // Width and length of the baseplate
     gridCellSize: 4,         // Size of one grid square
     baseplateColor: '#2e2e2e',
@@ -264,6 +270,68 @@
     baseplate.rotation.x = -Math.PI / 2;
     scene.add(baseplate);
 
+    // ---- simple geometric map for reference ----
+    // Visual only: the player walks through these shapes, they do not block movement.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(60, 120, 40);
+    scene.add(sun);
+
+    (function buildMap() {
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0x1a1a1a });
+
+      function add(geometry, color, x, y, z, rotY) {
+        const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: color }));
+        mesh.position.set(x, y, z);
+        if (rotY) mesh.rotation.y = rotY;
+        mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMat));
+        scene.add(mesh);
+      }
+
+      // Box whose bottom sits on the baseplate
+      function box(w, h, d, color, x, z) {
+        add(new THREE.BoxGeometry(w, h, d), color, x, h / 2, z);
+      }
+
+      // Central plinth and tall tower
+      box(16, 2, 16, 0xc8c8c8, 0, 0);
+      box(6, 30, 6, 0xe0e0e0, 40, 0);
+
+      // Staircase
+      for (let i = 0; i < 8; i++) {
+        box(4, (i + 1) * 1.5, 4, 0xb0b0b0, -60 + i * 4, -30);
+      }
+
+      // Pyramid
+      add(new THREE.ConeGeometry(9, 14, 4), 0xd8d8d8, -40, 7, 40, Math.PI / 4);
+
+      // Row of pillars alternating shade
+      for (let i = -4; i <= 4; i++) {
+        box(4, 12, 4, i % 2 ? 0x8a8a8a : 0xd0d0d0, i * 12, -70);
+      }
+
+      // Corner pillars
+      box(6, 20, 6, 0x6e6e6e, -80, -80);
+      box(6, 20, 6, 0x6e6e6e, 80, -80);
+      box(6, 20, 6, 0x6e6e6e, -80, 80);
+      box(6, 20, 6, 0x6e6e6e, 80, 80);
+
+      // Boundary walls
+      box(200, 6, 2, 0x6b6b6b, 0, -100);
+      box(200, 6, 2, 0x6b6b6b, 0, 100);
+      box(2, 6, 200, 0x6b6b6b, -100, 0);
+      box(2, 6, 200, 0x6b6b6b, 100, 0);
+
+      // Compass poles: red north, gray east, south and west
+      function pole(color, x, z) {
+        add(new THREE.CylinderGeometry(1, 1, 40, 12), color, x, 20, z);
+      }
+      pole(0xc0392b, 0, -130);
+      pole(0x9e9e9e, 130, 0);
+      pole(0x9e9e9e, 0, 130);
+      pole(0x9e9e9e, -130, 0);
+    })();
+
     // ---- camera with configurable FOV ----
     let fovDeg = CONFIG.fov;
     const urlFov = parseFloat(params.get('fov'));
@@ -278,7 +346,6 @@
       0.1,
       5000
     );
-    camera.position.set(0, CONFIG.eyeHeight, 0);
 
     // ---- phone orientation -> camera orientation ----
     // Same math as three.js DeviceOrientationControls.
@@ -299,6 +366,71 @@
       target.copy(deviceQuat);
     }
 
+    // ---- keyboard movement state ----
+    const keys = {};
+    const player = { x: 0, z: 0, feetY: 0, vy: 0, grounded: true };
+    let eye = CONFIG.eyeHeight;
+    const forward = new THREE.Vector3(0, 0, -1);
+    const right = new THREE.Vector3(1, 0, 0);
+    const tmpDir = new THREE.Vector3();
+    let lastTime = performance.now();
+
+    function resetPosition() {
+      player.x = 0;
+      player.z = 0;
+      player.feetY = 0;
+      player.vy = 0;
+      player.grounded = true;
+    }
+
+    function update(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      // Forward and right are flattened onto the ground, following the direction the camera looks.
+      camera.getWorldDirection(tmpDir);
+      tmpDir.y = 0;
+      if (tmpDir.lengthSq() > 1e-6) {
+        forward.copy(tmpDir).normalize();
+      }
+      right.set(-forward.z, 0, forward.x);
+
+      // Horizontal movement
+      let mx = 0;
+      let mz = 0;
+      if (keys.KeyW) { mx += forward.x; mz += forward.z; }
+      if (keys.KeyS) { mx -= forward.x; mz -= forward.z; }
+      if (keys.KeyD) { mx += right.x; mz += right.z; }
+      if (keys.KeyA) { mx -= right.x; mz -= right.z; }
+      const len = Math.hypot(mx, mz);
+      if (len > 0) {
+        const step = CONFIG.moveSpeed * (keys.KeyC ? CONFIG.crouchSpeedFactor : 1) * dt / len;
+        player.x = clamp(player.x + mx * step, -CONFIG.mapBound, CONFIG.mapBound);
+        player.z = clamp(player.z + mz * step, -CONFIG.mapBound, CONFIG.mapBound);
+      }
+
+      // Jump and gravity
+      if (keys.Space && player.grounded) {
+        player.vy = CONFIG.jumpVelocity;
+        player.grounded = false;
+      }
+      if (!player.grounded) {
+        player.vy -= CONFIG.gravity * dt;
+        player.feetY += player.vy * dt;
+        if (player.feetY <= 0) {
+          player.feetY = 0;
+          player.vy = 0;
+          player.grounded = true;
+        }
+      }
+
+      // Crouch: eye height eases toward the target
+      const eyeTarget = keys.KeyC ? CONFIG.crouchEyeHeight : CONFIG.eyeHeight;
+      eye += (eyeTarget - eye) * Math.min(1, dt * 12);
+
+      camera.position.set(player.x, player.feetY + eye, player.z);
+    }
+
     // ---- connection (PeerJS cloud signalling + WebRTC) ----
     const code = makeCode();
     let peerStatus = 'starting';
@@ -310,24 +442,23 @@
         'Code: ' + code + '  (enter this on the phone)\n' +
         'Server: ' + peerStatus + '\n' +
         'Phone: ' + phoneStatus + '\n' +
-        'FOV: ' + fovDeg + '  (+ / - to change, H hides this)';
+        'Pos: ' + player.x.toFixed(1) + ', ' + (player.feetY + eye).toFixed(1) + ', ' + player.z.toFixed(1) + '\n' +
+        'FOV: ' + fovDeg + '  (+ / - to change)\n' +
+        'WASD move, Space jump, C crouch, R reset, H hide HUD';
     }
 
     const peer = new Peer(CONFIG.peerPrefix + code);
 
     peer.on('open', function () {
       peerStatus = 'ready';
-      renderHud();
     });
 
     peer.on('error', function (err) {
       peerStatus = 'error (' + err.type + '), reload this page';
-      renderHud();
     });
 
     peer.on('disconnected', function () {
       peerStatus = 'reconnecting';
-      renderHud();
       if (!peer.destroyed) {
         peer.reconnect();
       }
@@ -342,7 +473,6 @@
 
       const onReady = function () {
         phoneStatus = 'connected';
-        renderHud();
       };
       if (conn.open) {
         onReady();
@@ -356,7 +486,6 @@
         if (phoneConn === conn) {
           phoneConn = null;
           phoneStatus = 'disconnected (view holds last position)';
-          renderHud();
         }
       });
     });
@@ -366,17 +495,34 @@
       fovDeg = clamp(value, CONFIG.fovMin, CONFIG.fovMax);
       camera.fov = fovDeg;
       camera.updateProjectionMatrix();
-      renderHud();
     }
 
     window.addEventListener('keydown', function (e) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      keys[e.code] = true;
+      if (e.code === 'Space') {
+        e.preventDefault();
+      }
+      if (e.code === 'KeyR') {
+        resetPosition();
+      }
       if (e.key === '+' || e.key === '=') {
         setFov(fovDeg + 1);
       } else if (e.key === '-' || e.key === '_') {
         setFov(fovDeg - 1);
       } else if (e.key === 'h' || e.key === 'H') {
         hud.style.display = hud.style.display === 'none' ? '' : 'none';
+      }
+    });
+
+    window.addEventListener('keyup', function (e) {
+      keys[e.code] = false;
+    });
+
+    // Release all keys when the window loses focus, so nothing gets stuck.
+    window.addEventListener('blur', function () {
+      for (const k in keys) {
+        keys[k] = false;
       }
     });
 
@@ -387,14 +533,17 @@
     });
 
     // ---- render loop ----
-    function frame() {
+    function frame(now) {
+      update(now);
       camera.quaternion.slerp(target, CONFIG.smoothing);
       renderer.render(scene, camera);
+      renderHud();
       requestAnimationFrame(frame);
     }
 
-    renderHud();
-    frame();
+    camera.fov = fovDeg;
+    camera.updateProjectionMatrix();
+    requestAnimationFrame(frame);
   }
 
   // ================================ START ================================
