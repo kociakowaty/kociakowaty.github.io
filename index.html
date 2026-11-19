@@ -177,6 +177,7 @@ body.touch #rotate { display: none; }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
+
 // ===================== WEAPONS =====================
 var WEAPON_DEFS = {
   pistol: {
@@ -306,7 +307,6 @@ var GunModels = {
     mkBox(pump, 0.075, 0.07, 0.2, 0, 0, 0, wood);
     mkBox(root, 0.09, 0.14, 0.05, 0, -0.04, 0.08, wood);
     var stock = mkBox(root, 0.08, 0.14, 0.32, 0, 0.0, 0.27, wood); stock.rotation.x = -0.08;
-    mkBox(root, 0.012, 0.02, 0.012, 0, 0.04, -0.6, mkMat(def.accent, 0.3, 0.6));
     root.userData.holo = addHoloSight(root);
     return { root: root, slide: null, mag: null, pump: pump, barrel: barrel, muzzle: new THREE.Vector3(0, 0.0, -0.66), eject: new THREE.Vector3(0.07, 0.04, -0.05), bolt: null, rest: new THREE.Vector3(0, 0, 0) };
   },
@@ -340,7 +340,7 @@ var SIGHTS = {
   pistol:  { y: 0.125, rz: 0.0,   fz: -0.19, base: 0.1 },
   rifle:   { y: 0.14,  rz: 0.12,  fz: -0.75, base: 0.03 },
   smg:     { y: 0.1,   rz: -0.02, fz: -0.3,  base: 0.02 },
-  shotgun: { y: 0.085, rz: 0.065, fz: -0.6,  base: 0.05 }
+  shotgun: { y: 0.107, rz: 0.065, fz: -0.6,  base: 0.05 }
 };
 
 // Iron sights: two rear ears with a notch, and a front post. The tops of both sit on the sight line.
@@ -353,27 +353,49 @@ function addIronSights(root, kind) {
   mkBox(root, 0.004, 0.005, 0.014, 0, S.y - 0.0025, S.fz, tip);
 }
 
-// Holosight: housing, glass window on the rear face, and a red dot that lags and clips at the window edge
+// Reflex sight for the shotgun: tube, mount, turret, lens rings and a stencil-masked window with the red dot
 function addHoloSight(root) {
   var S = SIGHTS.shotgun;
   var g = new THREE.Group(); g.position.set(0, S.y, 0); root.add(g);
-  // Open frame only: the sight has no solid body, so the view through it stays clear
-  var metal = mkMat(0x3a3e45, 0.8, 0.3);
-  var rim = new THREE.Mesh(new THREE.TorusGeometry(0.027, 0.0035, 6, 28), metal);
-  rim.position.set(0, 0, 0.066); g.add(rim);
-  mkBox(g, 0.05, 0.007, 0.13, 0, 0.03, -0.01, metal);                     // top rail
-  mkBox(g, 0.006, 0.05, 0.13, 0.026, 0, -0.01, metal);                    // side struts
-  mkBox(g, 0.006, 0.05, 0.13, -0.026, 0, -0.01, metal);
-  // Glass: almost invisible, with only a faint edge tint
-  var glass = new THREE.Mesh(new THREE.CircleGeometry(0.026, 24),
-    new THREE.MeshBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.04, depthWrite: false }));
-  glass.position.set(0, 0, 0.065); g.add(glass);
-  // Red dot: a soft additive glow sprite with a bright core
-  var dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: ViewModel.makeDotTex(), color: 0xff3322,
-    transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
-  dot.scale.set(0.02, 0.02, 1);
-  dot.position.set(0, 0, 0.07); g.add(dot);
-  return { group: g, dot: dot };
+  var body = mkMat(0x2a2e34, 0.7, 0.35);
+  var dark = mkMat(0x15171a, 0.6, 0.5);
+  var rim = mkMat(0x0d0e10, 0.5, 0.6);
+  // Main tube, above the window so it doesn't block the view through the glass
+  mkCyl(g, 0.014, 0.114, 0, 0.034, -0.005, body, 'z');
+  // Side mount posts, outside the window radius
+  mkBox(g, 0.004, 0.05, 0.05, 0.0195, 0.005, -0.02, dark);
+  mkBox(g, 0.004, 0.05, 0.05, -0.0195, 0.005, -0.02, dark);
+  // Mount base down to the rail
+  mkBox(g, 0.03, 0.012, 0.05, 0, -0.024, -0.02, dark);
+  // Elevation turret on top of the tube
+  mkCyl(g, 0.007, 0.012, 0, 0.054, -0.01, dark);
+  // Hollow front and rear lens rings
+  var front = new THREE.Mesh(new THREE.TorusGeometry(0.019, 0.0025, 8, 28), rim);
+  front.position.set(0, 0, -0.062); g.add(front);
+  var rear = new THREE.Mesh(new THREE.TorusGeometry(0.019, 0.0025, 8, 28), rim);
+  rear.position.set(0, 0, 0.052); g.add(rear);
+  // Window mask: invisible, writes the stencil that defines the visible area
+  var mask = new THREE.Mesh(new THREE.CircleGeometry(0.017, 24), new THREE.MeshBasicMaterial({
+    colorWrite: false, depthWrite: false,
+    stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc,
+    stencilZPass: THREE.ReplaceStencilOp, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp
+  }));
+  mask.position.set(0, 0, 0.0545); mask.renderOrder = -1; g.add(mask);
+  // Glass: a faint blue-green tint
+  var glass = new THREE.Mesh(new THREE.CircleGeometry(0.017, 24),
+    new THREE.MeshBasicMaterial({ color: 0xa8e0ff, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }));
+  glass.position.set(0, 0, 0.0545); glass.renderOrder = 0; g.add(glass);
+  // Dot: only drawn inside the window mask, so it disappears when it moves outside
+  var reticle = new THREE.Group(); reticle.position.set(0, 0, 0.057); g.add(reticle);
+  var dot = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: ViewModel.makeDotTex(), color: 0xff3322,
+    transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+    stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc,
+    stencilZPass: THREE.KeepStencilOp, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp
+  }));
+  dot.scale.set(0.009, 0.009, 1); dot.renderOrder = 1;
+  reticle.add(dot);
+  return { group: g, dot: dot, reticle: reticle };
 }
 
 var ViewModel = {
@@ -389,6 +411,7 @@ var ViewModel = {
   recoilZ: new Spring(0), recoilPitch: new Spring(0), recoilYaw: new Spring(0),
   anim: { type: null, t: 0, dur: 0, data: null },
   equipT: 1, shotTimer: 0, flash: null, sprintLerp: 0, fireFlex: 0,
+  bobMul: 1, swayMul: 1,
 
   init: function (camera) {
     this.camera = camera;
@@ -479,23 +502,31 @@ var ViewModel = {
     return [g0, g1, g2];
   },
 
+  // Guns and their hand rigs are built once per weapon and reused on every switch
   equip: function (inv) {
     var w = inv.current();
     if (this.current) { this.gunHolder.remove(this.current.model.root); this.current = null; }
     this.rigR = null; this.rigL = null;
     if (!w) return;
-    var model = GunModels[w.def.model](w.def);
-    this.gunHolder.add(model.root);
-    this.current = { id: w.id, model: model, def: w.def };
-    var SG = SIGHTS[w.def.model];
-    this.adsCur = new THREE.Vector3(0, -SG.y, -(0.2 + SG.rz));   // rear sight sits 0.2 m from the eye
-    var g = GRIP[w.def.model];
-    this.rigR = this.makeHand(true, g.r);
-    model.root.add(this.rigR.root);
-    if (g.l) {
-      this.rigL = this.makeHand(false, g.l);
-      model.root.add(this.rigL.root);
+    this._gunCache = this._gunCache || {};
+    var c = this._gunCache[w.id];
+    if (!c) {
+      var model = GunModels[w.def.model](w.def);
+      var SG = SIGHTS[w.def.model];
+      var G = GRIP[w.def.model];
+      var rigR = this.makeHand(true, G.r);
+      model.root.add(rigR.root);
+      var rigL = null;
+      if (G.l) { rigL = this.makeHand(false, G.l); model.root.add(rigL.root); }
+      c = this._gunCache[w.id] = {
+        model: model, rigR: rigR, rigL: rigL,
+        adsCur: new THREE.Vector3(0, -SG.y, -(0.2 + SG.rz))
+      };
     }
+    this.gunHolder.add(c.model.root);
+    this.current = { id: w.id, model: c.model, def: w.def };
+    this.adsCur = c.adsCur;
+    this.rigR = c.rigR; this.rigL = c.rigL;
     this.equipT = 0;
     this.anim.type = null;
     this.swayX.x = 0; this.swayY.x = 0;
@@ -514,7 +545,7 @@ var ViewModel = {
     this.flash.rotation.z = Math.random() * Math.PI;
     this.flash.scale.setScalar(def.pellets > 1 ? 1.4 : 0.9 + Math.random() * 0.4);
     this.shotTimer = 0.05;
-    this.fireFlex = 1;                       // trigger finger pull, decays in update()
+    this.fireFlex = 1;
     var m = this.current.model;
     if (def.model === 'shotgun') { this.anim.type = 'pump'; this.anim.t = 0; this.anim.dur = 0.55; }
     else if (m.slide) { this.anim.type = 'slideKick'; this.anim.t = 0; this.anim.dur = 0.09; }
@@ -578,20 +609,26 @@ var ViewModel = {
     for (var f = 0; f < 5; f++) {
       for (var j = 0; j < 3; j++) {
         var target = rig.rest[f][j] * tension;
-        if (rig.isRight && f === 0 && j === 1) target += this.fireFlex * 0.9;   // trigger pull
-        if (!rig.isRight && f >= 2) target += leftExtra;                        // grip tightens on reload
-        target += Math.sin(t * 1.6 + f * 0.9 + j * 0.4) * 0.025;               // breathing
+        if (rig.isRight && f === 0 && j === 1) target += this.fireFlex * 0.9;
+        if (!rig.isRight && f >= 2) target += leftExtra;
+        target += Math.sin(t * 1.6 + f * 0.9 + j * 0.4) * 0.025;
         rig.cur[f][j] += (target - rig.cur[f][j]) * k;
         rig.fingers[f][j].rotation.x = rig.cur[f][j];
       }
     }
   },
 
+  // Segment helper with shared scratch vectors (no allocations per call)
   setSeg: function (mesh, a, b) {
     var dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
     var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     mesh.position.set((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5);
-    if (len > 1e-6) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / len, dy / len, dz / len));
+    if (len > 1e-6) {
+      this._sd = this._sd || new THREE.Vector3();
+      this._su = this._su || new THREE.Vector3(0, 1, 0);
+      this._sd.set(dx / len, dy / len, dz / len);
+      mesh.quaternion.setFromUnitVectors(this._su, this._sd);
+    }
     mesh.scale.set(1, len, 1);
   },
 
@@ -599,8 +636,11 @@ var ViewModel = {
   setArm: function (arm, rig) {
     if (!rig) { arm.fore.visible = false; arm.upper.visible = false; return; }
     arm.fore.visible = true; arm.upper.visible = true;
-    var wrist = this.group.worldToLocal(rig.root.localToWorld(new THREE.Vector3(0, -0.06, 0)));
-    this.setSeg(arm.fore, arm.elbow, wrist);
+    this._aw = this._aw || new THREE.Vector3();
+    this._aw.set(0, -0.06, 0);
+    rig.root.localToWorld(this._aw);
+    this.group.worldToLocal(this._aw);
+    this.setSeg(arm.fore, arm.elbow, this._aw);
     this.setSeg(arm.upper, arm.shoulder, arm.elbow);
   },
 
@@ -623,14 +663,14 @@ var ViewModel = {
     this.swayX.update(-input.mdx * 0.0016, 120, 14, dt);
     this.swayY.update(-input.mdy * 0.0016, 120, 14, dt);
     var swayMul = 1 - this.aim * 0.7;
-    var swx = this.swayX.x * swayMul, swy = this.swayY.x * swayMul;
+    var swx = this.swayX.x * swayMul * this.swayMul, swy = this.swayY.x * swayMul * this.swayMul;
 
     var bobRate = input.running ? 14 : 9;
     if (input.moving) this.bobT += dt * bobRate;
     this.bobAmt += ((input.moving ? (input.running ? 1 : 0.55) : 0) - this.bobAmt) * Math.min(1, dt * 6);
     var bobScale = (1 - this.aim * 0.8) * (input.crouched ? 0.6 : 1);
-    var bobX = Math.sin(this.bobT) * 0.012 * this.bobAmt * bobScale;
-    var bobY = Math.abs(Math.cos(this.bobT)) * -0.012 * this.bobAmt * bobScale + Math.sin(this.bobT * 2) * 0.004 * this.bobAmt * bobScale;
+    var bobX = Math.sin(this.bobT) * 0.012 * this.bobAmt * bobScale * this.bobMul;
+    var bobY = (Math.abs(Math.cos(this.bobT)) * -0.012 + Math.sin(this.bobT * 2) * 0.004) * this.bobAmt * bobScale * this.bobMul;
 
     var breathe = Math.sin(input.time * 1.6) * 0.0025 * (1 - this.aim * 0.7);
 
@@ -668,7 +708,7 @@ var ViewModel = {
     this.flash.visible = this.flash.material.opacity > 0.01;
 
     var holo = this.current && this.current.model.root.userData.holo;
-    if (holo) this.updateHolo(holo, dt, input);
+    if (holo) this.updateHolo(holo, dt);
 
     // Hands: fingers react to aim / sprint / reload / firing
     this.fireFlex *= Math.exp(-dt * 16);
@@ -681,6 +721,61 @@ var ViewModel = {
     this.camera.updateMatrixWorld(true);
     this.setArm(this.armR, this.rigR);
     this.setArm(this.armL, this.rigL);
+  },
+
+  // Holo sight: the dot is pushed by look and movement, springs back to centre, and is capped by the sway limit
+  updateHolo: function (holo, dt) {
+    var P = Player, cam = P.camera, h = this.holoS;
+    var sens = (window.Settings && Settings.holoSens != null) ? Settings.holoSens : 1;
+    var limit = (window.Settings && Settings.holoLimit != null) ? Settings.holoLimit : 1;
+    var LAG = 0.15;
+    var pv = this._hp;
+    if (!pv) {
+      pv = this._hp = { yaw: P.yaw, pitch: P.pitch, x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    }
+
+    // Look: yaw and pitch changes push the dot
+    var K = 0.0035 / P.mouseSens;
+    h.vx += -(P.yaw - pv.yaw) * K;
+    h.vy +=  (P.pitch - pv.pitch) * K;
+
+    var q = cam.quaternion, qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    var rx = 1 - 2 * (qy * qy + qz * qz), ry = 2 * (qx * qy + qw * qz), rz = 2 * (qx * qz - qw * qy);
+    var ux = 2 * (qx * qy - qw * qz),     uy = 1 - 2 * (qx * qx + qz * qz), uz = 2 * (qy * qz + qw * qx);
+    var dx = cam.position.x - pv.x, dy = cam.position.y - pv.y, dz = cam.position.z - pv.z;
+    h.vx -= (dx * rx + dy * ry + dz * rz) * LAG;
+    h.vy -= (dx * ux + dy * uy + dz * uz) * LAG;
+
+    pv.yaw = P.yaw; pv.pitch = P.pitch;
+    pv.x = cam.position.x; pv.y = cam.position.y; pv.z = cam.position.z;
+
+    // Spring back to centre
+    h.vx += (-70 * h.x - 9 * h.vx) * dt; h.x += h.vx * dt;
+    h.vy += (-70 * h.y - 9 * h.vy) * dt; h.y += h.vy * dt;
+    var sr = Math.sqrt(h.x * h.x + h.y * h.y);
+    if (sr > 0.2) { var sk = 0.2 / sr; h.x *= sk; h.y *= sk; }
+
+    // Drawn offset: sensitivity is a direct multiplier, then the sway limit caps it
+    var ox = h.x * sens, oy = h.y * sens;
+    var maxR = 0.045 * limit;
+    var r = Math.sqrt(ox * ox + oy * oy);
+    if (r > maxR) { var k2 = maxR / r; ox *= k2; oy *= k2; }
+    holo.reticle.position.set(ox, oy, 0.057);
+  },
+
+  // Muzzle flash texture: bright core with radiating spikes
+  makeFlashTex: function () {
+    var c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    var x = c.getContext('2d');
+    var g = x.createRadialGradient(64, 64, 0, 64, 64, 50);
+    g.addColorStop(0, 'rgba(255,255,235,1)'); g.addColorStop(0.3, 'rgba(255,200,90,0.9)'); g.addColorStop(1, 'rgba(255,120,30,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+    for (var i = 0; i < 9; i++) {
+      var a = (i / 9) * Math.PI * 2 + Math.random() * 0.3, L = 40 + Math.random() * 24;
+      x.strokeStyle = 'rgba(255,225,150,0.85)'; x.lineWidth = 3;
+      x.beginPath(); x.moveTo(64, 64); x.lineTo(64 + Math.cos(a) * L, 64 + Math.sin(a) * L); x.stroke();
+    }
+    return new THREE.CanvasTexture(c);
   },
 
   // Radial glow for the red dot: white-hot centre fading to nothing
@@ -697,33 +792,6 @@ var ViewModel = {
     x.fillStyle = g; x.fillRect(0, 0, 128, 128);
     this._dotTex = new THREE.CanvasTexture(c);
     return this._dotTex;
-  },
-
-  // Red dot: pushed by mouse movement, pulled back to centre by a spring, clipped to the window
-  updateHolo: function (holo, dt, input) {
-    var h = this.holoS;
-    h.vx += -(input.mdx || 0) * 0.0035;
-    h.vy += -(input.mdy || 0) * 0.0035;
-    h.vx += (-70 * h.x - 9 * h.vx) * dt; h.x += h.vx * dt;
-    h.vy += (-70 * h.y - 9 * h.vy) * dt; h.y += h.vy * dt;
-    var r = Math.sqrt(h.x * h.x + h.y * h.y), maxR = 0.02;
-    if (r > maxR) { h.x *= maxR / r; h.y *= maxR / r; h.vx *= 0.4; h.vy *= 0.4; }
-    holo.dot.position.set(h.x, h.y, 0.07);
-  },
-
-  // Muzzle flash texture: bright core with radiating spikes
-  makeFlashTex: function () {
-    var c = document.createElement('canvas'); c.width = 128; c.height = 128;
-    var x = c.getContext('2d');
-    var g = x.createRadialGradient(64, 64, 0, 64, 64, 50);
-    g.addColorStop(0, 'rgba(255,255,235,1)'); g.addColorStop(0.3, 'rgba(255,200,90,0.9)'); g.addColorStop(1, 'rgba(255,120,30,0)');
-    x.fillStyle = g; x.fillRect(0, 0, 128, 128);
-    for (var i = 0; i < 9; i++) {
-      var a = (i / 9) * Math.PI * 2 + Math.random() * 0.3, L = 40 + Math.random() * 24;
-      x.strokeStyle = 'rgba(255,225,150,0.85)'; x.lineWidth = 3;
-      x.beginPath(); x.moveTo(64, 64); x.lineTo(64 + Math.cos(a) * L, 64 + Math.sin(a) * L); x.stroke();
-    }
-    return new THREE.CanvasTexture(c);
   },
 
   getMuzzleWorld: function () {
@@ -748,16 +816,20 @@ var ViewModel = {
     return this.current.model.eject.clone().applyMatrix4(this.current.model.root.matrixWorld);
   }
 };
+
 // ===================== MAP =====================
 var GameMap = {
   colliders: [],   // {min:{x,z}, max:{x,z}, top:y, human?:bool}
   solids: [],      // meshes that bullets can hit (static world + bodies)
   pickups: [],
   spawn: { x: 0, z: 2, yaw: 0 },
+  _mats: {},
 
   box: function (scene, x, y, z, w, h, d, color, opts) {
     opts = opts || {};
-    var mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.85, metalness: 0.05 });
+    // Boxes of the same colour share one material
+    var key = 'b' + color;
+    var mat = this._mats[key] || (this._mats[key] = new THREE.MeshStandardMaterial({ color: color, roughness: 0.85, metalness: 0.05 }));
     var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y + h / 2, z);
     mesh.castShadow = true; mesh.receiveShadow = true;
@@ -944,10 +1016,12 @@ var Effects = {
   shellMatRed: new THREE.MeshStandardMaterial({ color: 0xaa2a2a, metalness: 0.2, roughness: 0.5 }),
   sparkGeo: new THREE.BoxGeometry(0.02, 0.02, 0.02),
   sparkMat: new THREE.MeshBasicMaterial({ color: 0xffdd99 }),
+  _tPool: [],
 
   init: function (scene, onHit) { this.scene = scene; this.onHit = onHit; },
 
   fireBullet: function (origin, dir, def, damage) {
+    if (this.bullets.length >= 200) this.bullets.shift();
     var speed = def.bulletSpeed;
     var b = {
       pos: origin.clone(), prev: origin.clone(),
@@ -960,14 +1034,23 @@ var Effects = {
     return b;
   },
 
+  // Tracer lines are reused from a pool instead of created and disposed each time
   spawnTracer: function (pos, vel, len) {
     var dir = vel.clone().normalize();
-    var geo = new THREE.BufferGeometry();
     var a = pos.clone().addScaledVector(dir, -len);
-    geo.setAttribute('position', new THREE.Float32BufferAttribute([a.x, a.y, a.z, pos.x, pos.y, pos.z], 3));
-    var mat = new THREE.LineBasicMaterial({ color: 0xffd28a, transparent: true, opacity: 0.95 });
-    var line = new THREE.Line(geo, mat);
-    this.scene.add(line);
+    var line = this._tPool && this._tPool.pop();
+    if (!line) {
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(new Array(6).fill(0), 3));
+      line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffd28a, transparent: true, opacity: 0.95 }));
+      this.scene.add(line);
+    }
+    var p = line.geometry.attributes.position;
+    p.array[0] = a.x; p.array[1] = a.y; p.array[2] = a.z;
+    p.array[3] = pos.x; p.array[4] = pos.y; p.array[5] = pos.z;
+    p.needsUpdate = true;
+    line.material.opacity = 0.95;
+    line.visible = true;
     this.tracers.push({ obj: line, life: 0.12, max: 0.12 });
   },
 
@@ -1018,26 +1101,30 @@ var Effects = {
     }
   },
 
+  // Per-frame bullet, tracer, shell, smoke and spark update. Dead entries are compacted in place.
   update: function (dt) {
-    var G = new THREE.Vector3(0, -9.8, 0);
-    var i, b, hits;
+    var G = this._G || (this._G = new THREE.Vector3(0, -9.8, 0));
+    var dirN = this._dN || (this._dN = new THREE.Vector3());
+    var i, n, w;
 
-    for (i = this.bullets.length - 1; i >= 0; i--) {
-      b = this.bullets[i];
+    var bl = this.bullets;
+    w = 0;
+    for (i = 0, n = bl.length; i < n; i++) {
+      var b = bl[i];
       b.prev.copy(b.pos);
       b.vel.addScaledVector(G, dt * 0.35);
       b.pos.addScaledVector(b.vel, dt);
       var step = b.prev.distanceTo(b.pos);
       b.traveled += step;
       b.life -= dt;
-      var dirN = b.vel.clone().normalize();
+      dirN.copy(b.vel).normalize();
       this.spawnTracer(b.pos, dirN, b.tracerLen);
 
       var hitDone = false;
       if (step > 0) {
         this.raycaster.set(b.prev, dirN);
         this.raycaster.far = step;
-        hits = this.raycaster.intersectObjects(GameMap.solids, false);
+        var hits = this.raycaster.intersectObjects(GameMap.solids, false);
         if (hits.length) {
           var h = hits[0];
           var nrm = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dirN.clone().negate();
@@ -1051,23 +1138,29 @@ var Effects = {
           hitDone = true;
         }
       }
-      if (hitDone || b.life <= 0 || b.traveled >= b.maxRange || b.pos.y < 0) {
-        this.bullets.splice(i, 1);
-      }
+      if (!(hitDone || b.life <= 0 || b.traveled >= b.maxRange || b.pos.y < 0)) bl[w++] = b;
     }
+    bl.length = w;
 
-    for (i = this.tracers.length - 1; i >= 0; i--) {
-      var t = this.tracers[i];
+    var tl = this.tracers;
+    w = 0;
+    for (i = 0, n = tl.length; i < n; i++) {
+      var t = tl[i];
       t.life -= dt;
       t.obj.material.opacity = Math.max(0, t.life / t.max) * 0.95;
       if (t.life <= 0) {
-        this.scene.remove(t.obj); t.obj.geometry.dispose(); t.obj.material.dispose();
-        this.tracers.splice(i, 1);
+        t.obj.visible = false;
+        (this._tPool = this._tPool || []).push(t.obj);
+      } else {
+        tl[w++] = t;
       }
     }
+    tl.length = w;
 
-    for (i = this.shells.length - 1; i >= 0; i--) {
-      var s = this.shells[i];
+    var sh = this.shells;
+    w = 0;
+    for (i = 0, n = sh.length; i < n; i++) {
+      var s = sh[i];
       s.vel.addScaledVector(G, dt);
       s.mesh.position.addScaledVector(s.vel, dt);
       s.mesh.rotation.x += s.spin.x * dt;
@@ -1079,31 +1172,48 @@ var Effects = {
         s.vel.x *= 0.6; s.vel.z *= 0.6;
         s.spin.multiplyScalar(0.6);
         s.bounces++;
-        if (s.bounces > 3 || s.vel.y < 0.2) { s.vel.set(0, 0, 0); s.spin.set(0, 0, 0); s.mesh.rotation.x = 0; s.mesh.rotation.z = 0; }
+        if (s.bounces > 3 || s.vel.y < 0.2) {
+          s.vel.set(0, 0, 0); s.spin.set(0, 0, 0);
+          s.mesh.rotation.x = 0; s.mesh.rotation.z = 0;
+        }
       }
       s.life -= dt;
-      if (s.life < 0) { this.scene.remove(s.mesh); this.shells.splice(i, 1); }
+      if (s.life < 0) this.scene.remove(s.mesh);
+      else sh[w++] = s;
     }
+    sh.length = w;
 
-    for (i = this.smokes.length - 1; i >= 0; i--) {
-      var sm = this.smokes[i];
+    var sm_ = this.smokes;
+    w = 0;
+    for (i = 0, n = sm_.length; i < n; i++) {
+      var sm = sm_[i];
       sm.age += dt;
       sm.vel.multiplyScalar(Math.exp(-dt * 2.5));
       sm.sp.position.addScaledVector(sm.vel, dt);
       var q = sm.age / sm.life;
       sm.sp.scale.setScalar(sm.s0 + q * 0.22);
       sm.sp.material.opacity = Math.max(0, 1 - q) * 0.5;
-      if (q >= 1) { this.scene.remove(sm.sp); sm.sp.material.dispose(); this.smokes.splice(i, 1); }
+      if (q >= 1) {
+        this.scene.remove(sm.sp);
+        sm.sp.material.dispose();
+      } else {
+        sm_[w++] = sm;
+      }
     }
+    sm_.length = w;
 
-    for (i = this.sparks.length - 1; i >= 0; i--) {
-      var sp = this.sparks[i];
+    var sp_ = this.sparks;
+    w = 0;
+    for (i = 0, n = sp_.length; i < n; i++) {
+      var sp = sp_[i];
       sp.vel.addScaledVector(G, dt);
       sp.mesh.position.addScaledVector(sp.vel, dt);
       sp.life -= dt;
       sp.mesh.scale.setScalar(Math.max(0.1, sp.life / 0.25));
-      if (sp.life <= 0) { this.scene.remove(sp.mesh); this.sparks.splice(i, 1); }
+      if (sp.life <= 0) this.scene.remove(sp.mesh);
+      else sp_[w++] = sp;
     }
+    sp_.length = w;
   }
 };
 
@@ -1120,6 +1230,7 @@ var Decals = {
   maxDecals: 4000,
   decalCount: 0,
   smears: [],
+  _dl: [],
 
   init: function (scene) {
     this.scene = scene;
@@ -1236,7 +1347,7 @@ var Decals = {
   addDecal: function (parent, worldPoint, worldNormal, tex, size, opts) {
     opts = opts || {};
     var n = worldNormal.clone().normalize();
-    var inv = new THREE.Matrix4().getInverse(parent.matrixWorld);
+    var inv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
     var lp = parent.worldToLocal(worldPoint.clone());
     var ln = n.clone().transformDirection(inv).normalize();
     var lt = null;
@@ -1260,6 +1371,8 @@ var Decals = {
     mesh.position.copy(lp).addScaledVector(ln, 0.006);
     mesh.userData.decal = true;
     parent.add(mesh);
+    (this._dl = this._dl || []).push(mesh);
+    if (this._dl.length > 6000) this._dl = this._dl.filter(function (m) { return m.parent; });
     this.decalCount++;
     this.trimDecals();
     return mesh;
@@ -1272,9 +1385,9 @@ var Decals = {
 
   trimDecals: function () {
     if (this.decalCount <= this.maxDecals) return;
-    var found = null;
-    this.scene.traverse(function (o) { if (!found && o.userData && o.userData.decal) found = o; });
-    if (found && found.parent) { found.parent.remove(found); this.decalCount--; }
+    var list = this._dl || [], found = null;
+    while (list.length && !found) { var c = list.shift(); if (c.parent) found = c; }
+    if (found) { found.parent.remove(found); this.decalCount--; }
   },
 
   removeDecal: function (m) {
@@ -1287,7 +1400,6 @@ var Decals = {
     var size = weapon.pellets > 1 ? 0.05 : 0.07;
     this.addDecal(obj, point, normal, this.tex.scorch, size * 2.6, { opacity: 0.6 });
     this.addDecal(obj, point, normal, this.tex.core, size, { opacity: 1 });
-    this.addDecal(obj, point, normal, this.tex.hole, size * 0.7, { opacity: 0.5 });
   },
 
   // Human wound: hole + red wound + droplet spray. NO smear here (smears come only from dragging).
@@ -1307,7 +1419,12 @@ var Decals = {
   },
 
   spawnDroplet: function (pos, vel, bounces) {
-    if (this.droplets.length > 2500) { var old = this.droplets.shift(); old.mesh.visible = false; if (old.mesh.parent) old.mesh.parent.remove(old.mesh); }
+    if (this.droplets.length > 2500) {
+      var old = this.droplets[0], last = this.droplets.length - 1;
+      this.droplets[0] = this.droplets[last];
+      this.droplets.length = last;
+      if (old.mesh.parent) old.mesh.parent.remove(old.mesh);
+    }
     var m = new THREE.Mesh(this.dropletGeo, this.dropletMat);
     m.position.copy(pos);
     m.scale.setScalar(0.6 + Math.random() * 0.9);
@@ -1395,7 +1512,11 @@ var Decals = {
       if (step > 0) {
         var dirN = d.vel.clone().normalize();
         ray.set(prev, dirN); ray.far = step + 0.01;
-        var hits = ray.intersectObjects(GameMap.solids.filter(function (o) { return !o.userData.target; }), false);
+        if (!this._dropC || this._dropN !== GameMap.solids.length) {
+          this._dropC = GameMap.solids.filter(function (o) { return !o.userData.target; });
+          this._dropN = GameMap.solids.length;
+        }
+        var hits = ray.intersectObjects(this._dropC, false);
         if (hits.length) {
           var h = hits[0];
           var nrm = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dirN.clone().negate();
@@ -1406,7 +1527,6 @@ var Decals = {
             if (hv.lengthSq() < 1e-6) hv.set(0.01, 0, 0);
             this.pool(h.point.x, h.point.y, h.point.z, hv.normalize(), vSpeed, sinA, true);
           } else {
-            // Wall: small round splat (no elongated smear)
             this.addDecal(h.object, h.point, nrm, this.tex.blood, 0.05 + vSpeed * 0.004, { opacity: 0.9 });
           }
           hitDone = true;
@@ -1424,8 +1544,10 @@ var Decals = {
     }
     for (i = this.pools.length - 1; i >= 0; i--) {
       var p = this.pools[i];
+      if (p.done) continue;
       p.t += dt;
       var k = Math.min(1, p.t / p.dur);
+      if (k >= 1) p.done = true;
       var e = 1 - Math.pow(1 - k, 3);
       var f = 0.25 + 0.75 * e;
       p.mesh.scale.set(p.target.x * f, p.target.y * f, 1);
@@ -1454,7 +1576,8 @@ var LIMBS = {
   ftL: { name: 'LEFT FOOT', hp: 40 },    ftR: { name: 'RIGHT FOOT', hp: 40 }
 };
 
-// ---------- small vector and quaternion helpers (arrays: vectors [x,y,z], quaternions [w,x,y,z]) ----------
+// ---------- vector and quaternion helpers (arrays: vectors [x,y,z], quaternions [w,x,y,z]) ----------
+// Used by the non-hot paths (hit, dismember, limits). The solver uses the scratch versions below.
 var Vx = {
   add: function (a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; },
   sub: function (a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; },
@@ -1473,20 +1596,11 @@ var Qt = {
             a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0]];
   },
   conj: function (a) { return [a[0], -a[1], -a[2], -a[3]]; },
-  norm: function (a) {
-    var l = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2] + a[3] * a[3]) || 1;
-    return [a[0] / l, a[1] / l, a[2] / l, a[3] / l];
-  },
   // rotate vector v by unit quaternion q
   rot: function (q, v) {
     var u = [q[1], q[2], q[3]];
     var c1 = Vx.cross(u, v), c2 = Vx.cross(u, c1);
     return [v[0] + 2 * (q[0] * c1[0] + c2[0]), v[1] + 2 * (q[0] * c1[1] + c2[1]), v[2] + 2 * (q[0] * c1[2] + c2[2])];
-  },
-  // orientation integration: q' = q + h/2 * (0, w) * q
-  integrate: function (q, w, h) {
-    var d = Qt.mul([0, w[0], w[1], w[2]], q);
-    return Qt.norm([q[0] + 0.5 * h * d[0], q[1] + 0.5 * h * d[1], q[2] + 0.5 * h * d[2], q[3] + 0.5 * h * d[3]]);
   },
   // quaternion for a rotation of ang about unit axis ax
   fromAxis: function (ax, ang) { var s = Math.sin(ang / 2); return [Math.cos(ang / 2), ax[0] * s, ax[1] * s, ax[2] * s]; }
@@ -1497,7 +1611,7 @@ var PHYS = {
   G: 9.8,          // gravity
   BETA: 0.25,      // position-error correction per iteration
   SLOP: 0.002,     // allowed penetration before correction
-  ITER: 10,        // solver iterations per substep
+  ITER: 8,         // solver iterations per substep
   MU: 0.7,         // friction coefficient for skin, cloth and the floor
   SUB_DT: 1 / 480, // maximum substep length
   SUB_MAX: 16,
@@ -1540,35 +1654,109 @@ function makeBody(H, name, c, shape, m) {
   };
 }
 
-// Angular velocity of a body's point r (offset from its centre)
-function pointVel(b, r) { return Vx.add(b.v, Vx.cross(b.w, r)); }
+// ---------- scratch-array solver helpers (no allocations in the hot path) ----------
+var _ra = [0,0,0], _rb = [0,0,0], _pa = [0,0,0], _pb = [0,0,0], _rel = [0,0,0];
+var _t1 = [0,0,0], _t2 = [0,0,0], _t3 = [0,0,0], _t4 = [0,0,0], _t5 = [0,0,0], _t6 = [0,0,0], _pc = [0,0,0];
+var _ck = [0,0,0], _ke = [0,0,0], _kc = [0,0,0], _kK = [[0,0,0],[0,0,0],[0,0,0]];
+var _s1 = [0,0,0], _s2 = [0,0,0], _s3 = [0,0,0], _s4 = [0,0,0];
+var _imp = [0,0,0], _cra = [0,0,0], _crb = [0,0,0];
+var _qD = [1,0,0,0], _qc = [1,0,0,0], _qe = [1,0,0,0], _sv = [0,0,0];
+var _wr = [0,0,0], _tau = [0,0,0], _ti = [0,0,0], _ta = [0,0,0];
 
-// Inverse world inertia applied to a vector
-function invIw(b, v) {
-  if (b.invM === 0 && b.invIl[0] === 0) return [0, 0, 0];
-  var lv = Qt.rot(Qt.conj(b.q), v);
-  lv = [lv[0] * b.invIl[0], lv[1] * b.invIl[1], lv[2] * b.invIl[2]];
-  return Qt.rot(b.q, lv);
+// Rotate v by unit quaternion q into o. s = 1 rotates by q, s = -1 by the conjugate.
+function rotS(q, v, o, s) {
+  var ux = s * q[1], uy = s * q[2], uz = s * q[3], w = q[0];
+  var c1x = uy * v[2] - uz * v[1], c1y = uz * v[0] - ux * v[2], c1z = ux * v[1] - uy * v[0];
+  var c2x = uy * c1z - uz * c1y,   c2y = uz * c1x - ux * c1z,   c2z = ux * c1y - uy * c1x;
+  o[0] = v[0] + 2 * (w * c1x + c2x);
+  o[1] = v[1] + 2 * (w * c1y + c2y);
+  o[2] = v[2] + 2 * (w * c1z + c2z);
+  return o;
 }
 
-// Velocity change of the relative velocity at an anchor per unit impulse along e (the K matrix column)
-function applyK(A, B, ra, rb, e) {
-  var iB = invIw(B, Vx.cross(rb, e)), iA = invIw(A, Vx.cross(ra, e));
-  return Vx.add(Vx.mul(e, A.invM + B.invM), Vx.add(Vx.cross(iB, rb), Vx.cross(iA, ra)));
+// Cross product into o
+function crossS(a, b, o) {
+  o[0] = a[1] * b[2] - a[2] * b[1];
+  o[1] = a[2] * b[0] - a[0] * b[2];
+  o[2] = a[0] * b[1] - a[1] * b[0];
+  return o;
 }
 
-// Apply an impulse at an anchor: B gets +imp, A gets -imp
+// Quaternion product a * b into o (same order as Qt.mul)
+function mulS(a, b, o) {
+  var a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
+  var b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+  o[0] = a0 * b0 - a1 * b1 - a2 * b2 - a3 * b3;
+  o[1] = a0 * b1 + a1 * b0 + a2 * b3 - a3 * b2;
+  o[2] = a0 * b2 - a1 * b3 + a2 * b0 + a3 * b1;
+  o[3] = a0 * b3 + a1 * b2 - a2 * b1 + a3 * b0;
+  return o;
+}
+
+// Inverse world inertia applied to v, into o (v must not be _t1)
+function invIw(b, v, o) {
+  if (b.invM === 0 && b.invIl[0] === 0) { o[0] = 0; o[1] = 0; o[2] = 0; return o; }
+  rotS(b.q, v, _t1, -1);
+  _t1[0] *= b.invIl[0]; _t1[1] *= b.invIl[1]; _t1[2] *= b.invIl[2];
+  return rotS(b.q, _t1, o, 1);
+}
+
+// Point velocity of body b at offset r, into o
+function pointVelS(b, r, o) {
+  crossS(b.w, r, _pc);
+  o[0] = b.v[0] + _pc[0]; o[1] = b.v[1] + _pc[1]; o[2] = b.v[2] + _pc[2];
+  return o;
+}
+
+// Relative point velocity (B minus A), into o
+function relS(A, B, ra, rb, o) {
+  pointVelS(B, rb, _pa); pointVelS(A, ra, _pb);
+  o[0] = _pa[0] - _pb[0]; o[1] = _pa[1] - _pb[1]; o[2] = _pa[2] - _pb[2];
+  return o;
+}
+
+// Velocity change at the anchor per unit impulse along e, into o
+function applyK(A, B, ra, rb, e, o) {
+  crossS(rb, e, _t2); invIw(B, _t2, _t3);
+  crossS(ra, e, _t2); invIw(A, _t2, _t4);
+  crossS(_t3, rb, _t5); crossS(_t4, ra, _t6);
+  var s = A.invM + B.invM;
+  o[0] = e[0] * s + _t5[0] + _t6[0];
+  o[1] = e[1] * s + _t5[1] + _t6[1];
+  o[2] = e[2] * s + _t5[2] + _t6[2];
+  return o;
+}
+
+// Apply an impulse at the anchor points: B gets +imp, A gets -imp
 function applyImpulse(A, B, ra, rb, imp) {
-  B.v = Vx.add(B.v, Vx.mul(imp, B.invM));
-  B.w = Vx.add(B.w, invIw(B, Vx.cross(rb, imp)));
-  A.v = Vx.sub(A.v, Vx.mul(imp, A.invM));
-  A.w = Vx.sub(A.w, invIw(A, Vx.cross(ra, imp)));
+  crossS(rb, imp, _t2); invIw(B, _t2, _t3);
+  B.v[0] += imp[0] * B.invM; B.v[1] += imp[1] * B.invM; B.v[2] += imp[2] * B.invM;
+  B.w[0] += _t3[0]; B.w[1] += _t3[1]; B.w[2] += _t3[2];
+  crossS(ra, imp, _t2); invIw(A, _t2, _t3);
+  A.v[0] -= imp[0] * A.invM; A.v[1] -= imp[1] * A.invM; A.v[2] -= imp[2] * A.invM;
+  A.w[0] -= _t3[0]; A.w[1] -= _t3[1]; A.w[2] -= _t3[2];
 }
 
-// Angular impulse between two bodies: B gets +tau, A gets -tau
+// Angular impulse: B gets +tau, A gets -tau
 function applyTorque(A, B, tau) {
-  B.w = Vx.add(B.w, invIw(B, tau));
-  A.w = Vx.sub(A.w, invIw(A, tau));
+  invIw(B, tau, _t3);
+  B.w[0] += _t3[0]; B.w[1] += _t3[1]; B.w[2] += _t3[2];
+  invIw(A, tau, _t3);
+  A.w[0] -= _t3[0]; A.w[1] -= _t3[1]; A.w[2] -= _t3[2];
+}
+
+// Changes the relative angular velocity along e so that its rate becomes target
+function solveAngular(A, B, e, target) {
+  invIw(B, e, _s1); invIw(A, e, _s2);
+  var r = e[0] * (B.w[0] - A.w[0]) + e[1] * (B.w[1] - A.w[1]) + e[2] * (B.w[2] - A.w[2]);
+  var k = e[0] * (_s1[0] + _s2[0]) + e[1] * (_s1[1] + _s2[1]) + e[2] * (_s1[2] + _s2[2]);
+  if (k < 1e-10) return;
+  var s = (target - r) / k;
+  _s3[0] = e[0] * s; _s3[1] = e[1] * s; _s3[2] = e[2] * s;
+  invIw(B, _s3, _s4);
+  B.w[0] += _s4[0]; B.w[1] += _s4[1]; B.w[2] += _s4[2];
+  invIw(A, _s3, _s4);
+  A.w[0] -= _s4[0]; A.w[1] -= _s4[1]; A.w[2] -= _s4[2];
 }
 
 // Solve a 3x3 linear system M x = b
@@ -1582,33 +1770,26 @@ function solve3(M, b) {
   return [Vx.dot(r0, b), Vx.dot(r1, b), Vx.dot(r2, b)];
 }
 
-// Anchor (ball) constraint: the two anchor points must coincide
+// Ball joint: the two anchor points must coincide
 function solveAnchor(j, h) {
   var A = j.a, B = j.b;
-  var ra = Qt.rot(A.q, j.pa), rb = Qt.rot(B.q, j.pb);
-  var C = Vx.add(Vx.sub(B.x, A.x), Vx.sub(rb, ra));
-  var vp = Vx.sub(pointVel(B, rb), pointVel(A, ra));
-  var cv = Vx.mul(C, PHYS.BETA / h), cl = Vx.len(cv);
-  if (cl > 1.5) cv = Vx.mul(cv, 1.5 / cl);
-  var rhs = Vx.mul(Vx.add(vp, cv), -1);
-  var K = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  rotS(A.q, j.pa, _ra, 1); rotS(B.q, j.pb, _rb, 1);
+  var cx = B.x[0] - A.x[0] + _rb[0] - _ra[0];
+  var cy = B.x[1] - A.x[1] + _rb[1] - _ra[1];
+  var cz = B.x[2] - A.x[2] + _rb[2] - _ra[2];
+  relS(A, B, _ra, _rb, _rel);
+  var g = PHYS.BETA / h;
+  var vx = cx * g, vy = cy * g, vz = cz * g;
+  var cl = Math.sqrt(vx * vx + vy * vy + vz * vz);
+  if (cl > 1.5) { var sc = 1.5 / cl; vx *= sc; vy *= sc; vz *= sc; }
+  var rhs = [-(_rel[0] + vx), -(_rel[1] + vy), -(_rel[2] + vz)];
   for (var c = 0; c < 3; c++) {
-    var e = [0, 0, 0]; e[c] = 1;
-    var col = applyK(A, B, ra, rb, e);
-    K[0][c] = col[0]; K[1][c] = col[1]; K[2][c] = col[2];
+    _ke[0] = 0; _ke[1] = 0; _ke[2] = 0; _ke[c] = 1;
+    applyK(A, B, _ra, _rb, _ke, _kc);
+    _kK[0][c] = _kc[0]; _kK[1][c] = _kc[1]; _kK[2][c] = _kc[2];
   }
-  var lam = solve3(K, rhs);
-  if (lam) applyImpulse(A, B, ra, rb, lam);
-}
-
-// Impulse that changes the relative angular velocity along e so that its rate becomes target
-function solveAngular(A, B, e, target) {
-  var r = Vx.dot(e, Vx.sub(B.w, A.w));
-  var k = Vx.dot(e, Vx.add(invIw(B, e), invIw(A, e)));
-  if (k < 1e-10) return;
-  var imp = Vx.mul(e, (target - r) / k);
-  B.w = Vx.add(B.w, invIw(B, imp));
-  A.w = Vx.sub(A.w, invIw(A, imp));
+  var lam = solve3(_kK, rhs);
+  if (lam) applyImpulse(A, B, _ra, _rb, lam);
 }
 
 // Cone limit: the angle between the parent's and the child's axis may not exceed j.cone
@@ -1620,14 +1801,13 @@ function solveCone(j, h) {
   var n = Vx.cross(dA, dB), nl = Vx.len(n);
   if (nl < 1e-9) return;
   n = Vx.mul(n, 1 / nl);
-  var target = PHYS.BETA * (j.cone - th) / h;   // rate allowed by the limit
+  var target = PHYS.BETA * (j.cone - th) / h;
   if (Vx.dot(n, Vx.sub(B.w, A.w)) > target) solveAngular(A, B, n, target);
 }
 
 // Twist limit: rotation about the parent's axis may not exceed j.twist
 function solveTwist(j, h) {
   var A = j.a, B = j.b;
-  // twist is only meaningful while the limb is near its cone; far outside it the angle wraps and would kick
   var swing = Math.acos(Math.max(-1, Math.min(1, Vx.dot(Qt.rot(A.q, j.ax), Qt.rot(B.q, j.bx)))));
   if (swing > j.cone * 1.2) return;
   var qr = Qt.mul(Qt.conj(A.q), B.q);
@@ -1666,23 +1846,39 @@ function solveJoint(j, h) {
   else solveHinge(j, h);
 }
 
-// Motor: torque that drives body B toward the target orientation (relative to A, or world when A is null)
+// Motor: drives body B toward the target orientation (relative to A, or world when A is null). Allocation-free.
 function applyMotor(m, S, h) {
   if (S <= 0) return;
   var A = m.a, B = m.b;
-  var qD = A ? Qt.mul(A.q, m.target) : m.target;
-  var qe = Qt.mul(qD, Qt.conj(B.q));
-  if (qe[0] < 0) qe = [-qe[0], -qe[1], -qe[2], -qe[3]];
-  var sv = [qe[1], qe[2], qe[3]], s = Vx.len(sv);
-  var ang = 2 * Math.atan2(s, qe[0]);
-  var ax = s > 1e-9 ? Vx.mul(sv, 1 / s) : [0, 0, 0];
-  var wrel = A ? Vx.sub(B.w, A.w) : B.w;
-  var tau = Vx.add(Vx.mul(ax, m.kp * ang), Vx.mul(wrel, -m.kd));
-  tau = Vx.mul(tau, S);
-  var tl = Vx.len(tau);
-  if (tl > m.maxT) tau = Vx.mul(tau, m.maxT / tl);
-  B.w = Vx.add(B.w, invIw(B, Vx.mul(tau, h)));
-  if (A) A.w = Vx.sub(A.w, invIw(A, Vx.mul(tau, h)));
+  var qD;
+  if (A) { mulS(A.q, m.target, _qD); qD = _qD; } else { qD = m.target; }
+
+  _qc[0] = B.q[0]; _qc[1] = -B.q[1]; _qc[2] = -B.q[2]; _qc[3] = -B.q[3];
+  mulS(qD, _qc, _qe);
+  if (_qe[0] < 0) { _qe[0] = -_qe[0]; _qe[1] = -_qe[1]; _qe[2] = -_qe[2]; _qe[3] = -_qe[3]; }
+
+  _sv[0] = _qe[1]; _sv[1] = _qe[2]; _sv[2] = _qe[3];
+  var s = Math.sqrt(_sv[0] * _sv[0] + _sv[1] * _sv[1] + _sv[2] * _sv[2]);
+  var ang = 2 * Math.atan2(s, _qe[0]);
+  var k = (s > 1e-9) ? (m.kp * ang) / s : 0;
+
+  if (A) { _wr[0] = B.w[0] - A.w[0]; _wr[1] = B.w[1] - A.w[1]; _wr[2] = B.w[2] - A.w[2]; }
+  else   { _wr[0] = B.w[0]; _wr[1] = B.w[1]; _wr[2] = B.w[2]; }
+
+  _tau[0] = (_sv[0] * k - _wr[0] * m.kd) * S;
+  _tau[1] = (_sv[1] * k - _wr[1] * m.kd) * S;
+  _tau[2] = (_sv[2] * k - _wr[2] * m.kd) * S;
+
+  var tl = Math.sqrt(_tau[0] * _tau[0] + _tau[1] * _tau[1] + _tau[2] * _tau[2]);
+  if (tl > m.maxT) { var c = m.maxT / tl; _tau[0] *= c; _tau[1] *= c; _tau[2] *= c; }
+
+  _tau[0] *= h; _tau[1] *= h; _tau[2] *= h;
+  invIw(B, _tau, _ti);
+  B.w[0] += _ti[0]; B.w[1] += _ti[1]; B.w[2] += _ti[2];
+  if (A) {
+    invIw(A, _tau, _ta);
+    A.w[0] -= _ta[0]; A.w[1] -= _ta[1]; A.w[2] -= _ta[2];
+  }
 }
 
 // Contacts: sphere against floor and boxes, sphere against sphere. Normal points from A to B.
@@ -1692,21 +1888,29 @@ function makeContact(A, B, n, p, d) {
 
 function solveContact(c, h) {
   var A = c.A, B = c.B, n = c.n;
-  var ra = Vx.sub(c.p, A.x), rb = Vx.sub(c.p, B.x);
-  var vn = Vx.dot(n, Vx.sub(pointVel(B, rb), pointVel(A, ra)));
-  var kn = Vx.dot(n, applyK(A, B, ra, rb, n));
+  _cra[0] = c.p[0] - A.x[0]; _cra[1] = c.p[1] - A.x[1]; _cra[2] = c.p[2] - A.x[2];
+  _crb[0] = c.p[0] - B.x[0]; _crb[1] = c.p[1] - B.x[1]; _crb[2] = c.p[2] - B.x[2];
+  var ra = _cra, rb = _crb;
+  relS(A, B, ra, rb, _rel);
+  var vn = n[0] * _rel[0] + n[1] * _rel[1] + n[2] * _rel[2];
+  applyK(A, B, ra, rb, n, _ck);
+  var kn = n[0] * _ck[0] + n[1] * _ck[1] + n[2] * _ck[2];
   if (kn < 1e-9) return;
   var bias = Math.min(1.5, PHYS.BETA * Math.max(0, c.d - PHYS.SLOP) / h);
   var lam = (bias - vn) / kn;
   var acc = Math.max(0, c.lam + lam);
   lam = acc - c.lam; c.lam = acc;
-  if (lam !== 0) applyImpulse(A, B, ra, rb, Vx.mul(n, lam));
-  // friction (tangential impulses clamped by the normal impulse)
-  var rel = Vx.sub(pointVel(B, rb), pointVel(A, ra));
+  if (lam !== 0) {
+    _imp[0] = n[0] * lam; _imp[1] = n[1] * lam; _imp[2] = n[2] * lam;
+    applyImpulse(A, B, ra, rb, _imp);
+    relS(A, B, ra, rb, _rel);
+  }
+  // friction, clamped by the normal impulse
   for (var k = 0; k < 2; k++) {
     var t = k === 0 ? c.t1 : c.t2;
-    var vt = Vx.dot(t, rel);
-    var kt = Vx.dot(t, applyK(A, B, ra, rb, t));
+    var vt = t[0] * _rel[0] + t[1] * _rel[1] + t[2] * _rel[2];
+    applyK(A, B, ra, rb, t, _ck);
+    var kt = t[0] * _ck[0] + t[1] * _ck[1] + t[2] * _ck[2];
     if (kt < 1e-9) continue;
     var lt = -vt / kt;
     var maxF = PHYS.MU * c.lam;
@@ -1715,8 +1919,9 @@ function solveContact(c, h) {
     lt = now - prev;
     if (k === 0) c.lt1 = now; else c.lt2 = now;
     if (lt !== 0) {
-      applyImpulse(A, B, ra, rb, Vx.mul(t, lt));
-      rel = Vx.sub(pointVel(B, rb), pointVel(A, ra));
+      _imp[0] = t[0] * lt; _imp[1] = t[1] * lt; _imp[2] = t[2] * lt;
+      applyImpulse(A, B, ra, rb, _imp);
+      relS(A, B, ra, rb, _rel);
     }
   }
 }
@@ -1726,47 +1931,52 @@ function tangentsOf(n) {
   return [t1, Vx.cross(n, t1)];
 }
 
-// Build all contacts for this substep from the current sphere positions
+// Contacts for this substep. World sphere positions go into arrays reused for the life of each body.
+// Body pairs are found with a sweep along X over a sorted order that is kept between calls.
+var _ord = [], _ordSrc = null;
 function collectContacts() {
   var out = [], bodies = PHYS.bodies, nb = bodies.length, G = PHYS.ground;
   var boxes = GameMap.colliders;
   var i, j, b, s, r;
-  // world-space spheres, once per body per substep
+
   for (i = 0; i < nb; i++) {
     b = bodies[i];
-    var ws = b.wsp;
-    ws.length = b.sp.length;
+    if (!b._wsa) {
+      b._wsa = [];
+      for (s = 0; s < b.sp.length; s++) b._wsa.push([0, 0, 0, 0]);
+      b.wsp = b._wsa;
+    }
     for (s = 0; s < b.sp.length; s++) {
-      var sp = b.sp[s], wc = Vx.add(b.x, Qt.rot(b.q, [sp[0], sp[1], sp[2]]));
-      ws[s] = [wc[0], wc[1], wc[2], sp[3]];
+      var sp = b.sp[s], w = b.wsp[s];
+      rotS(b.q, sp, _t1, 1);
+      w[0] = b.x[0] + _t1[0]; w[1] = b.x[1] + _t1[1]; w[2] = b.x[2] + _t1[2]; w[3] = sp[3];
     }
   }
+
+  // Floor and static boxes
   for (i = 0; i < nb; i++) {
     b = bodies[i];
     for (s = 0; s < b.wsp.length; s++) {
       var c = b.wsp[s];
       r = c[3];
-      // floor
       if (c[1] - r < 0) {
         var cf = makeContact(G, b, [0, 1, 0], [c[0], 0, c[2]], r - c[1]);
         var tf = tangentsOf(cf.n); cf.t1 = tf[0]; cf.t2 = tf[1];
         out.push(cf);
       }
-      // boxes (static colliders, not humans)
       for (var q = 0; q < boxes.length; q++) {
         var bx = boxes[q];
         if (bx.human) continue;
         var px = Math.max(bx.min.x, Math.min(c[0], bx.max.x));
         var py = Math.max(0, Math.min(c[1], bx.top));
         var pz = Math.max(bx.min.z, Math.min(c[2], bx.max.z));
-        var dv = [c[0] - px, c[1] - py, c[2] - pz];
-        var dl = Vx.len(dv);
+        var dx = c[0] - px, dy = c[1] - py, dz = c[2] - pz;
+        var dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
         var nrm, depth, pt;
         if (dl > 1e-9) {
           if (dl >= r) continue;
-          nrm = Vx.mul(dv, 1 / dl); depth = r - dl; pt = [px, py, pz];
+          nrm = [dx / dl, dy / dl, dz / dl]; depth = r - dl; pt = [px, py, pz];
         } else {
-          // centre inside the box: push out through the nearest face
           var faces = [
             [c[0] - bx.min.x, [-1, 0, 0]], [bx.max.x - c[0], [1, 0, 0]],
             [c[1], [0, -1, 0]], [bx.top - c[1], [0, 1, 0]],
@@ -1782,23 +1992,36 @@ function collectContacts() {
       }
     }
   }
-  // sphere against sphere, between bodies that are not joined to each other
+
+  // Broadphase: insertion sort by left edge (cheap on nearly sorted data)
+  if (_ordSrc !== bodies) { _ordSrc = bodies; _ord = bodies.slice(); }
+  for (i = 1; i < nb; i++) {
+    var v = _ord[i], kv = v.x[0] - v.br;
+    j = i - 1;
+    while (j >= 0 && _ord[j].x[0] - _ord[j].br > kv) { _ord[j + 1] = _ord[j]; j--; }
+    _ord[j + 1] = v;
+  }
+
+  // Sphere against sphere, only for pairs whose X extents overlap
   for (i = 0; i < nb; i++) {
-    var A = bodies[i];
+    var A = _ord[i], amax = A.x[0] + A.br;
     for (j = i + 1; j < nb; j++) {
-      var B = bodies[j];
+      var B = _ord[j];
+      if (B.x[0] - B.br > amax) break;
       if (A.human === B.human && A.ex[B.id]) continue;
-      if (Vx.len(Vx.sub(A.x, B.x)) > A.br + B.br) continue;      // bounding spheres apart
+      var ex = A.x[0] - B.x[0], ey = A.x[1] - B.x[1], ez = A.x[2] - B.x[2];
+      var brs = A.br + B.br;
+      if (ex * ex + ey * ey + ez * ez > brs * brs) continue;
       for (var sa = 0; sa < A.wsp.length; sa++) {
         var pa = A.wsp[sa];
         for (var sb = 0; sb < B.wsp.length; sb++) {
           var pb = B.wsp[sb];
-          var dx = pb[0] - pa[0], dy = pb[1] - pa[1], dz = pb[2] - pa[2];
+          var sx = pb[0] - pa[0], sy = pb[1] - pa[1], sz = pb[2] - pa[2];
           var rr = pa[3] + pb[3];
-          var d2 = dx * dx + dy * dy + dz * dz;
+          var d2 = sx * sx + sy * sy + sz * sz;
           if (d2 >= rr * rr || d2 < 1e-12) continue;
           var dist = Math.sqrt(d2);
-          var nn = [dx / dist, dy / dist, dz / dist];
+          var nn = [sx / dist, sy / dist, sz / dist];
           var cc = makeContact(A, B, nn, [pa[0] + nn[0] * pa[3], pa[1] + nn[1] * pa[3], pa[2] + nn[2] * pa[3]], rr - dist);
           var tt = tangentsOf(nn); cc.t1 = tt[0]; cc.t2 = tt[1];
           out.push(cc);
@@ -1807,56 +2030,6 @@ function collectContacts() {
     }
   }
   return out;
-}
-
-// ---------- muscle-like forces applied to a human each substep ----------
-function applyHumanForces(H, h) {
-  var pel = H.byName.pelvis;
-  // support force (rope) on the pelvis: holds a living body up; gravity compensation included
-  if (H.ropeS > 0 && !H.dead) {
-    var disp = Vx.sub(H.ropeTarget, pel.x);
-    var wr = 10, z = 0.9;
-    var acc = Vx.add(Vx.mul(disp, wr * wr), Vx.mul(pel.v, -2 * z * wr));
-    pel.v = Vx.add(pel.v, Vx.mul(acc, H.ropeS * h));
-  }
-  // joint motors
-  var S = H.motorS;
-  for (var k = 0; k < H.joints.length; k++) {
-    var j = H.joints[k];
-    applyMotor(j, S * j.sMul, h);
-  }
-  // upright motor for the pelvis (world orientation)
-  if (H.worldMotor) applyMotor(H.worldMotor, S, h);
-  // death twitch: a spinal reflex that kicks one leg
-  var tw = H.twitch;
-  if (tw && tw.t < 1.3) {
-    var amp = 22 * Math.sin(2 * Math.PI * 8 * tw.t) * Math.exp(-2.2 * tw.t);
-    var thig = H.byName['th' + tw.side], shin = H.byName['sh' + tw.side];
-    if (thig && shin) {
-      var tq = [amp, 0, 0];
-      applyTorque(pel, thig, Vx.mul(tq, h));           // hip
-      applyTorque(thig, shin, Vx.mul(tq, 0.7 * h));    // knee
-    }
-  }
-  // wound holding: the hand is pulled toward the wound
-  if (H.hold && H.hold.t > 0 && !H.dead) {
-    var wd = H.hold.wound, hand = H.hold.hand;
-    var W = Vx.add(wd.b.x, Qt.rot(wd.b.q, wd.lp));
-    var F = Vx.add(Vx.mul(Vx.sub(W, hand.x), 40), Vx.mul(hand.v, -4));
-    var fl = Vx.len(F);
-    if (fl > 20) F = Vx.mul(F, 20 / fl);
-    applyImpulse(PHYS.ground, hand, [0, 0, 0], [0, 0, 0], Vx.mul(F, h));
-  }
-  // corpse drag: a spring pulls the grabbed point toward the target
-  var g = H.grabInfo;
-  if (g && H.dead) {
-    var gp = Vx.add(g.body.x, Qt.rot(g.body.q, g.lp));
-    var gv = pointVel(g.body, Vx.sub(gp, g.body.x));
-    var acc2 = Vx.add(Vx.mul(Vx.sub(g.target, gp), 80), Vx.mul(gv, -12));
-    var al = Vx.len(acc2);
-    if (al > 120) acc2 = Vx.mul(acc2, 120 / al);
-    applyImpulse(PHYS.ground, g.body, [0, 0, 0], Vx.sub(gp, g.body.x), Vx.mul(acc2, g.body.m * h));
-  }
 }
 
 // Rigor mortis: the body goes limp, then stiffens to the pose it died in over a few seconds
@@ -1918,7 +2091,6 @@ var BODY_LAYOUT = [
 ];
 
 // Joints. ax / bx are the directions from the joint into each body at rest (equal at rest).
-// Hinges use an axis; positive bend is toward the front for elbows and backward for knees.
 var JOINT_LAYOUT = [
   { t: 'ball', a: 'pelvis', b: 'abdomen', at: [0, 1.06, 0], ax: [0, 1, 0], bx: [0, 1, 0], cone: 0.55, twist: 0.4, wn: 14, maxT: 140 },
   { t: 'ball', a: 'abdomen', b: 'chest', at: [0, 1.30, 0], ax: [0, 1, 0], bx: [0, 1, 0], cone: 0.45, twist: 0.4, wn: 14, maxT: 140 },
@@ -1965,7 +2137,8 @@ var Humans = {
       bodies: [], byName: {}, joints: [], jointsAll: [], groups: [], parts: [],
       wounds: [], hold: null, twitch: null, stagger: 0, downed: false, vitalCut: false,
       limbHp: {}, cut: {}, smears: [], motorS: 1, ropeS: 1, grabInfo: null, rag: null,
-      ropeTarget: [x, 0.98, z], worldMotor: null
+      ropeTarget: [x, 0.98, z], worldMotor: null,
+      sleeping: false, sleepT: 0
     };
     for (var key in LIMBS) H.limbHp[key] = LIMBS[key].hp;
 
@@ -2011,7 +2184,6 @@ var Humans = {
     var Ip = (pel.Il[0] + pel.Il[1] + pel.Il[2]) / 3;
     H.worldMotor = { a: null, b: pel, target: [1, 0, 0, 0], kp: Ip * 144, kd: 2 * 0.8 * Ip * 12, maxT: 300 };
 
-    // visuals
     this.buildVisuals(H, shirtCol, pantsCol);
 
     H.mass = 0;
@@ -2071,7 +2243,6 @@ var Humans = {
       group.add(mesh);
       return reg(mesh, part, limb);
     }
-    // capsule along local Y, matching the physics spheres at its two ends
     function capsule(group, L, r, mat, part, limb) {
       put(group, new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 14), mat), 0, 0, 0, part, limb);
       put(group, new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat), 0, L / 2, 0, part, limb);
@@ -2100,11 +2271,11 @@ var Humans = {
       } else if (n === 'head') {
         var skull = put(g, new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), skin), 0, 0.005, 0, 'head', n);
         skull.scale.set(0.93, 1.08, 1.0);
-        box(g, 0.1, 0.05, 0.11, 0, -0.06, 0.02, skin, 'head', n);                 // jaw
-        put(g, new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), skin), 0, -0.072, 0.07, 'head', n);   // chin
-        box(g, 0.022, 0.035, 0.026, 0, -0.012, 0.106, skin, 'head', n);           // nose
-        box(g, 0.1, 0.012, 0.022, 0, 0.032, 0.095, skin, 'head', n);              // brow
-        box(g, 0.04, 0.012, 0.012, 0, -0.045, 0.1, lips, 'head', n);              // mouth
+        box(g, 0.1, 0.05, 0.11, 0, -0.06, 0.02, skin, 'head', n);
+        put(g, new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), skin), 0, -0.072, 0.07, 'head', n);
+        box(g, 0.022, 0.035, 0.026, 0, -0.012, 0.106, skin, 'head', n);
+        box(g, 0.1, 0.012, 0.022, 0, 0.032, 0.095, skin, 'head', n);
+        box(g, 0.04, 0.012, 0.012, 0, -0.045, 0.1, lips, 'head', n);
         for (var eo = -1; eo <= 1; eo += 2) {
           var ew = put(g, new THREE.Mesh(new THREE.SphereGeometry(0.013, 10, 8), eyeWhite), eo * 0.038, 0.012, 0.094, 'head', n);
           ew.scale.set(1, 0.7, 0.5);
@@ -2120,7 +2291,6 @@ var Humans = {
       } else if (base === 'fa') {
         capsule(g, 0.25, 0.042, skin, 'forearm', n);
       } else if (base === 'hd') {
-        // palm, fingers and thumb. Local +Y is toward the wrist, -Y toward the fingertips.
         box(g, 0.072, 0.11, 0.03, 0, 0.035, 0, skin, 'hand', n);
         for (var fi = 0; fi < 4; fi++) {
           var fx = -0.027 + fi * 0.018;
@@ -2134,7 +2304,6 @@ var Humans = {
       } else if (base === 'sh') {
         capsule(g, 0.42, 0.055, pants, 'shin', n);
       } else if (base === 'ft') {
-        // sole, upper, heel, toe cap and ankle collar. Local +Z is forward.
         box(g, 0.095, 0.02, 0.25, 0, -0.025, 0, footMat, 'foot', n);
         box(g, 0.09, 0.04, 0.2, 0, 0.0, -0.01, footMat, 'foot', n);
         box(g, 0.085, 0.05, 0.06, 0, 0.005, -0.09, footMat, 'foot', n);
@@ -2144,26 +2313,35 @@ var Humans = {
     }
   },
 
-  // Each body follows its physics pose
+  // Each body follows its physics pose. Only bodies that moved get their transform written.
   syncVisuals: function (H) {
     for (var i = 0; i < H.bodies.length; i++) {
       var b = H.bodies[i];
+      var c = b._sc || (b._sc = [NaN, NaN, NaN, NaN, NaN, NaN, NaN]);
+      if (b.x[0] === c[0] && b.x[1] === c[1] && b.x[2] === c[2] &&
+          b.q[0] === c[3] && b.q[1] === c[4] && b.q[2] === c[5] && b.q[3] === c[6]) continue;
+      c[0] = b.x[0]; c[1] = b.x[1]; c[2] = b.x[2];
+      c[3] = b.q[0]; c[4] = b.q[1]; c[5] = b.q[2]; c[6] = b.q[3];
       b.group.position.set(b.x[0], b.x[1], b.x[2]);
       b.group.quaternion.set(b.q[1], b.q[2], b.q[3], b.q[0]);
     }
   },
 
-  // Yaw toward the player for the head, neck and chest of a living human
+  // Yaw toward the player for the head, neck and chest of a living human. Writes into reused target arrays.
   lookAt: function (H, px, py, pz) {
     var pel = H.byName.pelvis;
     var psi = Math.atan2(px - pel.x[0], pz - pel.x[2]);
     var cy = clampN(psi * 0.35, -0.5, 0.5), ny = clampN(psi * 0.25, -0.4, 0.4), hy = clampN(psi * 0.4, -0.9, 0.9);
     var jt = H.joints;
     for (var i = 0; i < jt.length; i++) {
-      var j = jt[i];
-      if (j.b.name === 'chest') j.target = Qt.fromAxis([0, 1, 0], cy);
-      else if (j.b.name === 'neck') j.target = Qt.fromAxis([0, 1, 0], ny);
-      else if (j.b.name === 'head') j.target = Qt.fromAxis([0, 1, 0], hy);
+      var j = jt[i], ang = null;
+      if (j.b.name === 'chest') ang = cy;
+      else if (j.b.name === 'neck') ang = ny;
+      else if (j.b.name === 'head') ang = hy;
+      if (ang === null) continue;
+      var t = j._lt || (j._lt = [1, 0, 0, 0]);
+      t[0] = Math.cos(ang / 2); t[1] = 0; t[2] = Math.sin(ang / 2); t[3] = 0;
+      j.target = t;
     }
   },
 
@@ -2180,7 +2358,7 @@ var Humans = {
       } else {
         this.lookAt(H, px, py, pz);
         var pel = H.byName.pelvis;
-        if (pel.x[1] < 0.55 && H.age > 0.5) H.downed = true;     // knocked down: stays down, alive
+        if (pel.x[1] < 0.55 && H.age > 0.5) H.downed = true;
         H.ropeS = H.downed ? 0 : (H.stagger > 0 ? 0.35 : 1);
         H.motorS = H.downed ? 0.25 : 1;
         if (H.stagger > 0) H.stagger = Math.max(0, H.stagger - dt);
@@ -2188,19 +2366,41 @@ var Humans = {
       }
     }
 
-    Ragdoll.step(dt);
+    // Physics is skipped entirely when every human is asleep
+    var allAsleep = this.list.length > 0;
+    for (i = 0; i < this.list.length; i++) {
+      if (!(this.list[i].dead && this.list[i].sleeping)) { allAsleep = false; break; }
+    }
+    if (!allAsleep) Ragdoll.step(dt);
 
     for (i = 0; i < this.list.length; i++) {
       H = this.list[i];
       this.syncVisuals(H);
       this.updateWounds(H, dt);
       if (H.dead) this.updateSmears(H, dt);
+      this.updateSleep(H, dt);
       H.collider.top = H.dead ? 0 : this.standColliderTop;
       var pz0 = H.byName.pelvis;
       H.collider.min.x = pz0.x[0] - 0.3; H.collider.max.x = pz0.x[0] + 0.3;
       H.collider.min.z = pz0.x[2] - 0.3; H.collider.max.z = pz0.x[2] + 0.3;
     }
   },
+
+  // A dead human sleeps once it has been still for a while, after rigor and the twitch are over
+  updateSleep: function (H, dt) {
+    if (!H.dead || H.sleeping || H.deadT < 7 || (H.twitch && H.twitch.t < 1.3) || H.grabInfo) return;
+    var still = true;
+    for (var b = 0; b < H.bodies.length && still; b++) {
+      var bd = H.bodies[b];
+      var sp = Math.abs(bd.v[0]) + Math.abs(bd.v[1]) + Math.abs(bd.v[2]);
+      var spin = Math.abs(bd.w[0]) + Math.abs(bd.w[1]) + Math.abs(bd.w[2]);
+      if (sp > 0.02 || spin > 0.05) still = false;
+    }
+    H.sleepT = still ? (H.sleepT || 0) + dt : 0;
+    if (H.sleepT > 0.6) H.sleeping = true;
+  },
+
+  wake: function (H) { if (H) { H.sleeping = false; H.sleepT = 0; } },
 
   // Arterial spray synced to a heartbeat (fading after death); small oozing for other wounds
   updateWounds: function (H, dt) {
@@ -2255,6 +2455,7 @@ var Humans = {
 
   // Returns 'kill' | 'dismember' | 'hit'
   hit: function (H, part, object, point, dir, dmg, weapon, normal) {
+    this.wake(H);
     var eff = dmg * (this.mult[part] || 1);
     Decals.wound(object, point, normal, dir, eff);
     var result = 'hit';
@@ -2264,14 +2465,12 @@ var Humans = {
     var wasDead = H.dead;
     var pt = Vx.arr(point), dv = Vx.arr(dir);
 
-    // remember the wound on the body, so it follows the body
     var lp = Qt.rot(Qt.conj(B.q), Vx.sub(pt, B.x));
     var ld = Qt.rot(Qt.conj(B.q), Vx.arr(normal));
     var arterial = eff > 90 || (eff > 25 && (part === 'thigh' || part === 'upperArm' || part === 'neck' || part === 'chest'));
     if (H.wounds.length > 60) H.wounds.shift();
     H.wounds.push({ b: B, lp: lp, ld: ld, arterial: arterial, phase: Math.random(), bleedT: 25, drip: 0 });
 
-    // impulse at the hit point
     var mag = clampN(eff * 0.03, 0.4, 5);
     applyImpulse(PHYS.ground, B, [0, 0, 0], Vx.sub(pt, B.x), Vx.mul(dv, mag * B.m));
     H.limbHp[limb] -= eff;
@@ -2311,7 +2510,6 @@ var Humans = {
     H.hold = null;
     H.stagger = 0;
     H.collider.top = 0;
-    // freeze every joint at the pose it died in; the motors then hold that pose (rigor)
     for (var i = 0; i < H.joints.length; i++) {
       var j = H.joints[i];
       j.target = Qt.mul(Qt.conj(j.a.q), j.b.q);
@@ -2328,10 +2526,11 @@ var Humans = {
 
   // Cut a body free: remove its joint(s) to the rest of the body. Its own children stay with it.
   dismember: function (H, limb, point, dir) {
+    this.wake(H);
     if (H.cut[limb]) return;
     H.cut[limb] = true;
     var names = [limb];
-    if (limb === 'chest') names.push('uaL', 'uaR');      // chest blow-off also separates both arms
+    if (limb === 'chest') names.push('uaL', 'uaR');
     if (limb === 'pelvis') names = ['thL', 'thR'];
     var removed = [];
     var keep = [];
@@ -2344,13 +2543,11 @@ var Humans = {
     for (var r = 0; r < removed.length; r++) {
       var rj = removed[r];
       var jp = Vx.add(rj.b.x, Qt.rot(rj.b.q, rj.pb));
-      // stump: arterial bleeding on both sides of the cut
       H.wounds.push({ b: rj.b, lp: rj.pb.slice(), ld: [0, -1, 0], arterial: true, phase: Math.random(), bleedT: 25, drip: 0 });
       H.wounds.push({ b: rj.a, lp: rj.pa.slice(), ld: [0, 1, 0], arterial: true, phase: Math.random(), bleedT: 25, drip: 0 });
       var out = Vx.norm(Vx.sub(rj.b.x, jp));
       applyImpulse(PHYS.ground, rj.b, [0, 0, 0], [0, 0, 0], Vx.add(Vx.mul(out, 1.5), Vx.mul(dv, 0.8)));
       H.cut[rj.b.name] = true;
-      // the severed piece and everything still joined to it falls freely (no support)
       var stack = [rj.b];
       while (stack.length) {
         var cur = stack.pop();
@@ -2391,6 +2588,7 @@ var Humans = {
     H.dead = false; H.rag = null; H.deadT = 0; H.hp = 100; H.downed = false; H.vitalCut = false;
     H.hold = null; H.twitch = null; H.stagger = 0; H.grabInfo = null;
     H.wounds = []; H.cut = {};
+    H.sleeping = false; H.sleepT = 0;
     for (var key in LIMBS) H.limbHp[key] = LIMBS[key].hp;
     H.joints = H.jointsAll.slice();
     for (var i = 0; i < H.bodies.length; i++) {
@@ -2425,6 +2623,67 @@ var Humans = {
   }
 };
 
+// Forces on each human every substep: rope support, joint motors, death twitch, wound holding and corpse dragging
+function applyHumanForces(H, h) {
+  var pel = H.byName.pelvis;
+
+  if (H.ropeS > 0 && !H.dead) {
+    var wr = 10, z = 0.9, tg = H.ropeTarget, px = pel.x, pv = pel.v;
+    var k = H.ropeS * h;
+    pv[0] += ((tg[0] - px[0]) * wr * wr - pv[0] * 2 * z * wr) * k;
+    pv[1] += ((tg[1] - px[1]) * wr * wr - pv[1] * 2 * z * wr) * k;
+    pv[2] += ((tg[2] - px[2]) * wr * wr - pv[2] * 2 * z * wr) * k;
+  }
+
+  var S = H.motorS;
+  for (var i = 0; i < H.joints.length; i++) {
+    var j = H.joints[i];
+    applyMotor(j, S * j.sMul, h);
+  }
+  if (H.worldMotor) applyMotor(H.worldMotor, S, h);
+
+  var tw = H.twitch;
+  if (tw && tw.t < 1.3) {
+    var amp = 22 * Math.sin(2 * Math.PI * 8 * tw.t) * Math.exp(-2.2 * tw.t);
+    var thig = H.byName['th' + tw.side], shin = H.byName['sh' + tw.side];
+    if (thig && shin) {
+      applyTorque(pel, thig, [amp * h, 0, 0]);
+      applyTorque(thig, shin, [amp * 0.7 * h, 0, 0]);
+    }
+  }
+
+  if (H.hold && H.hold.t > 0 && !H.dead) {
+    var wd = H.hold.wound, hand = H.hold.hand;
+    rotS(wd.b.q, wd.lp, _t1, 1);
+    var fx = (wd.b.x[0] + _t1[0] - hand.x[0]) * 40 - hand.v[0] * 4;
+    var fy = (wd.b.x[1] + _t1[1] - hand.x[1]) * 40 - hand.v[1] * 4;
+    var fz = (wd.b.x[2] + _t1[2] - hand.x[2]) * 40 - hand.v[2] * 4;
+    var fl = Math.sqrt(fx * fx + fy * fy + fz * fz);
+    if (fl > 20) { var sc = 20 / fl; fx *= sc; fy *= sc; fz *= sc; }
+    _imp[0] = fx * h; _imp[1] = fy * h; _imp[2] = fz * h;
+    applyImpulse(PHYS.ground, hand, [0, 0, 0], [0, 0, 0], _imp);
+  }
+
+  var g = H.grabInfo;
+  if (g && H.dead) {
+    var body = g.body;
+    rotS(body.q, g.lp, _t1, 1);
+    var gx = body.x[0] + _t1[0], gy = body.x[1] + _t1[1], gz = body.x[2] + _t1[2];
+    var wx = body.w[1] * _t1[2] - body.w[2] * _t1[1];
+    var wy = body.w[2] * _t1[0] - body.w[0] * _t1[2];
+    var wz = body.w[0] * _t1[1] - body.w[1] * _t1[0];
+    var vx = body.v[0] + wx, vy = body.v[1] + wy, vz = body.v[2] + wz;
+    var ax = (g.target[0] - gx) * 80 - vx * 12;
+    var ay = (g.target[1] - gy) * 80 - vy * 12;
+    var az = (g.target[2] - gz) * 80 - vz * 12;
+    var al = Math.sqrt(ax * ax + ay * ay + az * az);
+    if (al > 120) { var s2 = 120 / al; ax *= s2; ay *= s2; az *= s2; }
+    var mm = body.m * h;
+    _imp[0] = ax * mm; _imp[1] = ay * mm; _imp[2] = az * mm;
+    applyImpulse(PHYS.ground, body, [0, 0, 0], [_t1[0], _t1[1], _t1[2]], _imp);
+  }
+}
+
 var Ragdoll = {
   // Physics step for every human at once (the bodies and joints of all humans are one world)
   step: function (dt) {
@@ -2434,7 +2693,6 @@ var Ragdoll = {
     for (var s = 0; s < sub; s++) {
       for (var i = 0; i < Humans.list.length; i++) applyHumanForces(Humans.list[i], h);
       var bodies = PHYS.bodies, n = bodies.length;
-      // gravity, reduced on living bodies by the support: the support is spread over every body, not just the pelvis
       for (var b = 0; b < n; b++) {
         var hb = bodies[b].human;
         bodies[b].v[1] -= PHYS.G * h * (hb.dead || bodies[b].free ? 1 : 1 - hb.ropeS);
@@ -2447,8 +2705,8 @@ var Ragdoll = {
       }
       for (var k = 0; k < n; k++) {
         var bb = bodies[k];
-        bb.x = Vx.add(bb.x, Vx.mul(bb.v, h));
-        bb.q = Qt.integrate(bb.q, bb.w, h);
+        bb.x[0] += bb.v[0] * h; bb.x[1] += bb.v[1] * h; bb.x[2] += bb.v[2] * h;
+        integrateInPlace(bb, h);
       }
     }
   },
@@ -2462,6 +2720,7 @@ var Ragdoll = {
       if (d < bd) { bd = d; best = b; }
     }
     if (!best) return;
+    Humans.wake(H);
     H.grabInfo = { body: best, lp: Qt.rot(Qt.conj(best.q), Vx.sub(p, best.x)), target: p, dist: dist };
   },
 
@@ -2478,7 +2737,19 @@ var Ragdoll = {
   cleanup: function (H) {}
 };
 
-// ===================== LEGS (own legs, two-bone IK, foot planting) =====================
+// Quaternion integration in place: q' = normalize(q + h/2 * (0, w) * q)
+function integrateInPlace(b, h) {
+  var q = b.q, w = b.w;
+  var qw = q[0], qx = q[1], qy = q[2], qz = q[3];
+  var wx = w[0], wy = w[1], wz = w[2];
+  var r0 = -(wx * qx + wy * qy + wz * qz);
+  var r1 = wx * qw + wy * qz - wz * qy;
+  var r2 = -wx * qz + wy * qw + wz * qx;
+  var r3 = wx * qy - wy * qx + wz * qw;
+  var nw = qw + 0.5 * h * r0, nx = qx + 0.5 * h * r1, ny = qy + 0.5 * h * r2, nz = qz + 0.5 * h * r3;
+  var l = Math.sqrt(nw * nw + nx * nx + ny * ny + nz * nz) || 1;
+  q[0] = nw / l; q[1] = nx / l; q[2] = ny / l; q[3] = nz / l;
+}// ===================== LEGS (own legs, two-bone IK, foot planting) =====================
 // Feet are planted in world space. A foot steps only when the body has moved far enough from it;
 // each step is an arc to the new plant point. Knees are solved analytically and bend forward.
 var Legs = {
@@ -2525,15 +2796,21 @@ var Legs = {
     return { knee: knee, ankle: ankle };
   },
 
+  // Segment helper with shared scratch vectors (no allocations per call)
   setSeg: function (mesh, a, b) {
     var dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
     var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
     mesh.position.set((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5);
-    if (len > 1e-6) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / len, dy / len, dz / len));
+    if (len > 1e-6) {
+      this._sd = this._sd || new THREE.Vector3();
+      this._su = this._su || new THREE.Vector3(0, 1, 0);
+      this._sd.set(dx / len, dy / len, dz / len);
+      mesh.quaternion.setFromUnitVectors(this._su, this._sd);
+    }
     mesh.scale.set(1, len, 1);
   },
 
-  // P = Player (pos = feet, yaw, vel, moveSpeed, hipH, onGround, running, crouched)
+  // P0 = Player (pos = feet, yaw, vel, moveSpeed, hipH, onGround, running, crouched)
   update: function (dt, P0) {
     if (!this.parts) return;
     // Legs sit a little behind the body so the view down to the floor stays clear
@@ -2577,7 +2854,6 @@ var Legs = {
 
       var ax, ay, az;
       if (!P.onGround) {
-        // Airborne: legs tuck, plant re-anchors under the body for landing
         f.step = false;
         f.px = restX; f.pz = restZ;
         ax = hipX + fwd.x * 0.12; ay = hipY - 0.55; az = hipZ + fwd.z * 0.12;
@@ -2596,9 +2872,9 @@ var Legs = {
           var u = Math.min(1, f.t / f.dur);
           var e = u * u * (3 - 2 * u);
           var cx = f.fx + (f.tx - f.fx) * e, cz = f.fz + (f.tz - f.fz) * e;
-          var cy = P.pos.y + Math.sin(Math.PI * u) * f.lift;
-          if (u >= 1) { f.step = false; f.px = f.tx; f.pz = f.tz; cx = f.tx; cy = P.pos.y; cz = f.tz; }
-          ax = cx; ay = cy + 0.07; az = cz;
+          var cyy = P.pos.y + Math.sin(Math.PI * u) * f.lift;
+          if (u >= 1) { f.step = false; f.px = f.tx; f.pz = f.tz; cx = f.tx; cyy = P.pos.y; cz = f.tz; }
+          ax = cx; ay = cyy + 0.07; az = cz;
         } else {
           ax = f.px; ay = P.pos.y + 0.07; az = f.pz;
         }
@@ -2609,8 +2885,8 @@ var Legs = {
       this.setSeg(part.shin, ik.knee, ik.ankle);
       part.knee.position.copy(ik.knee);
       part.foot.position.set(ik.ankle.x + fwd.x * 0.07, ik.ankle.y - 0.035, ik.ankle.z + fwd.z * 0.07);
-      // Right-handed basis: X = right, Y = up, Z = back  (det +1, no mirrored geometry)
-      part.foot.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, back));
+      // Right-handed basis: X = right, Y = up, Z = back. One matrix is reused for every foot.
+      part.foot.quaternion.setFromRotationMatrix((Legs._m4 = Legs._m4 || new THREE.Matrix4()).makeBasis(right, up, back));
     }
 
     this.pelvis.position.set(P.pos.x, hipY + 0.03, P.pos.z);
@@ -2725,7 +3001,6 @@ var Player = {
     this.lean += (this.leanTarget - this.lean) * Math.min(1, dt * 8);
     if (Math.abs(this.lean) < 0.001) this.lean = 0;
 
-    var bendAng = this.lean * this.maxBend;
     var right = this.getRightDir();
     var spineLen = Math.max(0.12, this.eyeH - this.hipH);
     var eff = this.lean;
@@ -2750,6 +3025,26 @@ var Player = {
     cam.position.set(hipX + headDX, hipY + headDY, hipZ + headDZ);
     cam.rotation.set(this.pitch, this.yaw, this.leanRollSmooth + this.extraRoll);
     this.spine = { hipX: hipX, hipY: hipY, hipZ: hipZ, bend: ang };
+
+    // Camera bob and jump tilt, scaled by the settings multipliers
+    var st = window.Settings || {};
+    var bm = (st.camBobMul != null) ? st.camBobMul : 1;
+    var tm = (st.jumpTiltMul != null) ? st.jumpTiltMul : 1;
+    if (this._bobAmt === undefined) { this._bobAmt = 0; this._bobPh = 0; this._tilt = 0; }
+    var spd = Math.hypot(this.vel.x, this.vel.z);
+    var walking = (this.onGround && spd > 0.3) ? 1 : 0;
+    this._bobAmt += (walking * Math.min(1, spd / 4.4) - this._bobAmt) * Math.min(1, dt * 8);
+    this._bobPh += dt * (walking ? (this.running ? 14 : this.crouched ? 6 : 9) * Math.max(0.4, spd / 4.4) : 0);
+    var vert = Math.sin(this._bobPh * 2) * 0.022 * this._bobAmt * bm;
+    var lat = Math.sin(this._bobPh) * 0.014 * this._bobAmt * bm;
+    var bobRoll = Math.sin(this._bobPh) * 0.012 * this._bobAmt * bm;
+    cam.position.x += Math.cos(this.yaw) * lat;
+    cam.position.y += vert;
+    cam.position.z += -Math.sin(this.yaw) * lat;
+    cam.rotation.z += bobRoll;
+    var tiltTarget = this.onGround ? 0 : Math.max(-0.05, Math.min(0.05, this.vy * 0.008));
+    this._tilt += (tiltTarget - this._tilt) * Math.min(1, dt * 10);
+    cam.rotation.x += this._tilt * tm;
   },
 
   pointBlockedHead: function (x, z, r) {
@@ -2777,9 +3072,18 @@ var Player = {
 };
 
 // ===================== HUD =====================
+// Values are only written to the DOM when they change. The work runs at about 15 Hz.
+var HC = {};
+function hTxt(el, k, v) { if (HC[k] !== v) { HC[k] = v; el.textContent = v; } }
+function hSty(el, k, p, v) { var key = k + p; if (HC[key] !== v) { HC[key] = v; el.style[p] = v; } }
+function hCls(el, k, name, on) { if (HC[k] !== on) { HC[k] = on; el.classList.toggle(name, on); } }
+
 var HUD = {
   el: {},
   hintT: 0,
+  _acc: 0,
+  _invLast: '',
+
   init: function () {
     var ids = ['stamina', 'staminaFill', 'hint', 'ammo', 'wName', 'ammoMag', 'ammoRes', 'ammoFill', 'fireMode', 'inventory', 'invSlots', 'leanInd'];
     for (var i = 0; i < ids.length; i++) this.el[ids[i]] = document.getElementById(ids[i]);
@@ -2804,45 +3108,56 @@ var HUD = {
   },
 
   update: function (dt, st) {
+    this._acc += dt;
+    if (this._acc < 1 / 15) return;
+    var d = this._acc; this._acc = 0;
+    var el = this.el;
+
     var pct = st.stamina / st.maxStamina * 100;
-    this.el.staminaFill.style.width = pct.toFixed(1) + '%';
-    this.el.staminaFill.classList.toggle('low', st.exhausted || pct < 25);
-    this.el.stamina.style.opacity = (st.running || pct < 99) ? '1' : '0.55';
+    hSty(el.staminaFill, 'sf', 'width', pct.toFixed(1) + '%');
+    hCls(el.staminaFill, 'sfl', 'low', !!(st.exhausted || pct < 25));
+    hSty(el.stamina, 'sa', 'opacity', (st.running || pct < 99) ? '1' : '0.55');
 
-    this.el.leanInd.style.opacity = st.lean !== 0 ? '1' : '0';
-    if (this.el.leanGroup) this.el.leanGroup.setAttribute('transform', 'translate(60 60) rotate(' + (st.lean * 40).toFixed(2) + ')');
+    hSty(el.leanInd, 'li', 'opacity', st.lean !== 0 ? '1' : '0');
+    if (el.leanGroup) {
+      var lt = 'translate(60 60) rotate(' + (st.lean * 40).toFixed(2) + ')';
+      if (HC.lt !== lt) { HC.lt = lt; el.leanGroup.setAttribute('transform', lt); }
+    }
 
-    if (this.hintT > 0) { this.hintT -= dt; if (this.hintT <= 0) this.el.hint.classList.remove('show'); }
+    if (this.hintT > 0) { this.hintT -= d; if (this.hintT <= 0) el.hint.classList.remove('show'); }
 
     var w = st.weapon;
     if (w) {
-      this.el.wName.textContent = w.def.name + '  ·  SLOT ' + w.def.slot;
-      this.el.ammoMag.textContent = String(w.mag).padStart(2, '0');
-      this.el.ammoRes.textContent = isFinite(w.reserve) ? String(w.reserve).padStart(3, '0') : '∞';
+      hTxt(el.wName, 'wn', w.def.name + '  ·  SLOT ' + w.def.slot);
+      hTxt(el.ammoMag, 'am', String(w.mag).padStart(2, '0'));
+      hTxt(el.ammoRes, 'ar', isFinite(w.reserve) ? String(w.reserve).padStart(3, '0') : '∞');
       var frac = w.mag / w.def.magSize;
-      this.el.ammoFill.style.width = (frac * 100).toFixed(1) + '%';
-      this.el.ammo.classList.toggle('low', frac <= 0.25);
-      this.el.fireMode.textContent = (w.def.auto ? 'AUTO' : 'SEMI') + '  ·  ' + (w.def.pellets > 1 ? w.def.pellets + ' PELLETS' : w.def.shellType === 'shell' ? 'SHELLS' : 'FMJ');
-      this.el.ammo.style.display = 'block';
+      hSty(el.ammoFill, 'af', 'width', (frac * 100).toFixed(1) + '%');
+      hCls(el.ammo, 'al', 'low', frac <= 0.25);
+      hTxt(el.fireMode, 'fm', (w.def.auto ? 'AUTO' : 'SEMI') + '  ·  ' +
+        (w.def.pellets > 1 ? w.def.pellets + ' PELLETS' : w.def.shellType === 'shell' ? 'SHELLS' : 'FMJ'));
+      hSty(el.ammo, 'ad', 'display', 'block');
     } else {
-      this.el.wName.textContent = 'UNARMED';
-      this.el.ammoMag.textContent = '--';
-      this.el.ammoRes.textContent = '---';
-      this.el.ammoFill.style.width = '0%';
-      this.el.fireMode.textContent = 'PRESS F AT THE TABLE';
-      this.el.ammo.classList.remove('low');
+      hTxt(el.wName, 'wn', 'UNARMED');
+      hTxt(el.ammoMag, 'am', '--');
+      hTxt(el.ammoRes, 'ar', '---');
+      hSty(el.ammoFill, 'af', 'width', '0%');
+      hTxt(el.fireMode, 'fm', 'PRESS F AT THE TABLE');
+      hCls(el.ammo, 'al', 'low', false);
     }
   },
 
+  // Inventory: rebuilt only when a slot's text actually changes
   renderInventory: function (inv) {
     var html = '';
     for (var i = 0; i < 4; i++) {
       var w = inv.slots[i];
-      var cls = 'slot' + (i === inv.active ? ' active' : '') + (w ? '' : ' empty');
-      html += '<div class="' + cls + '"><span class="num">' + (i + 1) + '</span>' +
-        (w ? '<span>' + w.def.name + '</span><span class="ammoTxt">' + w.mag + ' / ' + (isFinite(w.reserve) ? w.reserve : '∞') + '</span>' : '<span>EMPTY</span>') + '</div>';
+      var c = 'slot' + (i === inv.active ? ' active' : '') + (w ? '' : ' empty');
+      html += '<div class="' + c + '"><span class="num">' + (i + 1) + '</span>' +
+        (w ? '<span>' + w.def.name + '</span><span class="ammoTxt">' + w.mag + ' / ' +
+          (isFinite(w.reserve) ? w.reserve : '∞') + '</span>' : '<span>EMPTY</span>') + '</div>';
     }
-    this.el.invSlots.innerHTML = html;
+    if (html !== this._invLast) { this._invLast = html; this.el.invSlots.innerHTML = html; }
   },
 
   setInventoryVisible: function (v) { this.el.inventory.classList.toggle('hidden', !v); }
@@ -3127,19 +3442,18 @@ var Game = {
     }
   },
 
-  // ---- Free aim ----
-  onFreeMouse: function (dx, dy) {
-    if (Player.aiming) return;           // disabled while aiming down sights
-    var s = Player.mouseSens;
-    this.freeYaw = Math.max(-0.14, Math.min(0.14, this.freeYaw + dx * s));
-    this.freePitch = Math.max(-0.1, Math.min(0.1, this.freePitch + dy * s));
+    onFreeMouse: function (dx, dy) {
+    if (Player.aiming) return;
+    var s = Player.mouseSens * Settings.freeSens, L = Settings.freeLimit;
+    this.freeYaw = Math.max(-L, Math.min(L, this.freeYaw + dx * s));
+    this.freePitch = Math.max(-L * 0.7, Math.min(L * 0.7, this.freePitch + dy * s));
   },
 
-  updateFreeAim: function (dt) {
+    updateFreeAim: function (dt) {
     this.freeW += ((Player.aiming ? 0 : 1) - this.freeW) * Math.min(1, dt * 14);
-    // No spring back: the offset stays where the mouse left it and only changes with mouse movement.
-    this.freeYaw = Math.max(-0.14, Math.min(0.14, this.freeYaw));
-    this.freePitch = Math.max(-0.1, Math.min(0.1, this.freePitch));
+    var L = Settings.freeLimit;
+    this.freeYaw = Math.max(-L, Math.min(L, this.freeYaw));
+    this.freePitch = Math.max(-L * 0.7, Math.min(L * 0.7, this.freePitch));
   },
 
   // ---- Camera feel ----
@@ -3162,7 +3476,7 @@ var Game = {
     if (this.fDown) this.fHold += rd;
     var active = this.started && this.fDown && this.fHold > 0.15;
     this.slowOn = active;
-    var target = active ? 0.22 : 1;
+    var target = active ? Settings.slowScale : 1;
     this.ts += (target - this.ts) * Math.min(1, rd * 9);
   },
 
@@ -3274,26 +3588,27 @@ var Game = {
     this.fireCooldown = w.def.fireInterval;
   },
 
-  // Bullets leave the barrel along the gun's own forward direction (free aim).
-  // While aiming down sights the direction converges on the point under the screen centre.
-  fire: function (w) {
+    fire: function (w) {
     var def = w.def;
     w.mag--;
 
     var muzzle = ViewModel.getMuzzleWorld();
     var gunDir = ViewModel.getMuzzleDir();
-    var eye = this.camera.position;
-    var aim = Player.getAimDir();
+    var hasHolo = !!(ViewModel.current && ViewModel.current.model.root.userData.holo);
+    // Holo weapons always fire at the dot. Other weapons blend hip to ADS as before.
+    // Hip fires from the muzzle. ADS blends toward the sight line (the red dot on the holo).
+    var a = ViewModel.aim;
 
-    Effects.raycaster.set(eye, aim);
+    // Sight line: eye -> front post (iron sights) or eye -> red dot (holo)
+    var sightDir = this.sightDir(gunDir);
+    Effects.raycaster.set(this.camera.position, sightDir);
     Effects.raycaster.far = def.range * 1.5;
     var hits = Effects.raycaster.intersectObjects(GameMap.solids, false);
-    var conv = hits.length ? hits[0].point.clone() : eye.clone().addScaledVector(aim, def.range);
+    var conv = hits.length ? hits[0].point.clone() : this.camera.position.clone().addScaledVector(sightDir, def.range);
     conv.sub(muzzle);
     if (conv.lengthSq() < 1e-6) conv.copy(gunDir);
     conv.normalize();
 
-    var a = ViewModel.aim;               // 0 = hip, 1 = ADS
     var baseDir = gunDir.clone().multiplyScalar(1 - a).addScaledVector(conv, a).normalize();
 
     var ads = Player.aiming;
@@ -3387,6 +3702,7 @@ var Game = {
     var self = this;
     requestAnimationFrame(function () { self.loop(); });
     var rd = Math.min(0.05, this.clock.getDelta());   // real (unscaled) frame time
+if (Settings.paused) rd = 0;
     this.updateTime(rd);
     var dt = rd * this.ts;                            // game time: everything except mouse-look slows
     this.time += dt;
@@ -3462,6 +3778,2007 @@ var Game = {
 };
 
 window.addEventListener('load', function () { Game.init(); });
+</script>
+<script>
+(function () {
+  var KEY = 'range_settings_v1';
+             var DEF = { shadows: undefined, renderScale: 100, maxBlood: 300, mouseSens: 0.0022, freeSens: 1, freeLimitDeg: 8, slowScale: 0.22, holoLimit: 1, holoSens: 1, bobMul: 1, swayMul: 1, dotSize: 1, camRecoilMul: 1, vmRecoilMul: 1, fov: 75, camBobMul: 1, jumpTiltMul: 1, fpsCounter: false, hud: {} };
+  var S = {};
+  try { S = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { S = {}; }
+  for (var k in DEF) if (!(k in S)) S[k] = DEF[k];
+  if (!S.hud || typeof S.hud !== 'object') S.hud = {};
+
+  // Runtime values read by the game (Settings.paused, Settings.freeSens, Settings.freeLimit, Settings.slowScale, Settings.blood)
+  var R = window.Settings = { paused: false, freeSens: 1, freeLimit: 0.14, slowScale: 0.22, blood: 1 };
+            function sync() {
+    R.freeSens = S.freeSens;
+    R.freeLimit = S.freeLimitDeg * Math.PI / 180;
+    R.slowScale = S.slowScale;
+    R.maxBlood = S.maxBlood;
+    R.holoLimit = S.holoLimit;
+    R.holoSens = S.holoSens;
+    R.bobMul = S.bobMul;
+    R.swayMul = S.swayMul;
+    R.dotSize = S.dotSize;
+    R.camRecoilMul = S.camRecoilMul;
+    R.vmRecoilMul = S.vmRecoilMul;
+    R.camBobMul = S.camBobMul;
+    R.jumpTiltMul = S.jumpTiltMul;
+    if (window.Game) Game.baseFov = S.fov;   // the game eases the camera FOV toward this every frame
+  }
+  var saveT = null;
+  function flush() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+  function save() { clearTimeout(saveT); saveT = setTimeout(flush, 400); }
+  window.addEventListener('pagehide', flush);
+  function set(key, v) { S[key] = v; sync(); save(); }
+  sync();
+
+      // Blood decal cap: 0 = unlimited. Counts wound, blood splats, drag smears and floor pools.
+  var bloodList = [];
+  function isBlood(tex) { return tex === Decals.tex.wound || tex === Decals.tex.blood || tex === Decals.tex.drag; }
+    function liveBlood() {
+    var j = 0;
+    for (var i = 0; i < bloodList.length; i++) if (bloodList[i].parent) bloodList[j++] = bloodList[i];
+    bloodList.length = j;
+    return bloodList;
+  }
+  function bloodFull() { return R.maxBlood > 0 && liveBlood().length >= R.maxBlood; }
+  function trimBlood() {
+    var cap = R.maxBlood;
+    if (!cap) return;
+    liveBlood();
+    while (bloodList.length > cap) {
+      var m = bloodList.shift();
+      var pi = Decals.pools.findIndex(function (p) { return p.mesh === m; });
+      if (pi >= 0) Decals.pools.splice(pi, 1);
+      Decals.removeDecal(m);
+    }
+  }
+  window.bloodCount = function () { return liveBlood().length; };
+  var _addDecal = Decals.addDecal, _pool = Decals.pool, _spawnDroplet = Decals.spawnDroplet;
+  Decals.addDecal = function (parent, p, n, tex, size, opts) {
+    var m = _addDecal.apply(this, arguments);
+    if (isBlood(tex)) { bloodList.push(m); trimBlood(); }
+    return m;
+  };
+  Decals.pool = function () {
+    var m = _pool.apply(this, arguments);
+    bloodList.push(m); trimBlood();
+    return m;
+  };
+  // No droplets once the cap is reached
+  Decals.spawnDroplet = function () {
+    if (bloodFull()) return;
+    return _spawnDroplet.apply(this, arguments);
+  };
+
+  function applyShadows() {
+    if (!Game.renderer) return;
+    Game.renderer.shadowMap.enabled = !!S.shadows;
+    Game.scene.traverse(function (o) { if (o.material) o.material.needsUpdate = true; });
+  }
+   function applyScale() {
+    window.userRenderScale = S.renderScale / 100;
+    if (window.applyPixelRatio) window.applyPixelRatio();
+  }
+
+  function $(id) { return document.getElementById(id); }
+  function mk(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+  var CSS = `
+#pauseMenu,#settingsMenu,#hudBar{font-family:"Trebuchet MS","Segoe UI",sans-serif;color:#e8edf3;user-select:none;-webkit-user-select:none}
+#pauseMenu{position:fixed;inset:0;z-index:30;display:none;background:rgba(5,6,8,.55)}
+#pauseMenu.on{display:block}
+#pauseTab{position:absolute;left:0;top:0;bottom:0;width:min(340px,86vw);box-sizing:border-box;padding:48px 34px;background:linear-gradient(180deg,rgba(12,14,18,.97),rgba(10,12,16,.92));border-right:3px solid #ffb84d;clip-path:polygon(0 0,100% 0,100% calc(100% - 28px),calc(100% - 28px) 100%,0 100%)}
+#pauseTab h1{font-size:46px;letter-spacing:10px;font-weight:900;color:#ffb84d;text-shadow:0 0 22px rgba(255,160,40,.45);margin:0}
+#pauseTab .sub{letter-spacing:4px;opacity:.6;font-size:12px;text-transform:uppercase;margin:6px 0 34px}
+#pauseTab .hint{font-size:11px;letter-spacing:2px;opacity:.5;margin-top:24px}
+.mbtn{display:block;width:100%;margin:0 0 12px;padding:14px 20px;font:700 15px "Trebuchet MS",sans-serif;letter-spacing:3px;background:#ffb84d;color:#111;border:0;cursor:pointer;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%)}
+.mbtn.alt{background:rgba(255,184,77,.12);color:#ffd28a}
+#settingsMenu{position:fixed;inset:0;z-index:40;display:none;background:#07090c;overflow:auto}
+#settingsMenu.on{display:block}
+.sHead{display:flex;align-items:center;justify-content:space-between;padding:22px 34px;border-bottom:1px solid rgba(255,184,77,.25)}
+.sTitle{font-size:22px;letter-spacing:8px;font-weight:900;color:#ffb84d}
+.tabs{display:flex;gap:6px;padding:0 34px;margin-top:18px}
+.tab{padding:10px 22px;letter-spacing:3px;font:700 13px "Trebuchet MS",sans-serif;background:rgba(255,255,255,.05);color:#ccc;border:0;cursor:pointer}
+.tab.on{background:#ffb84d;color:#111}
+.sBody{padding:20px 34px;max-width:720px}
+.row{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.row .lbl{flex:1;font-size:13px;letter-spacing:1.5px}
+.row input[type=range]{flex:1.4;accent-color:#ffb84d}
+.row .val{width:72px;text-align:right;font-family:Consolas,monospace;color:#ffd28a}
+.sw{width:58px;height:28px;border-radius:14px;background:rgba(255,255,255,.12);border:0;position:relative;cursor:pointer}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#ccc;transition:left .2s}
+.sw.on{background:#ffb84d}.sw.on::after{left:33px;background:#111}
+.mini{padding:8px 12px;background:#1a1f28;color:#ffd28a;border:1px solid #556;cursor:pointer;font:700 11px "Trebuchet MS",sans-serif;letter-spacing:2px}
+#hudBar{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:45;display:none;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;max-width:96vw;box-sizing:border-box;padding:10px 14px;background:rgba(10,12,16,.92);border:1px solid rgba(255,184,77,.4);font-size:12px;letter-spacing:1px}
+#hudBar.on{display:flex}
+#hudBar input{width:120px;accent-color:#ffb84d}
+#hbName{color:#ffb84d;font-weight:700;min-width:110px;text-align:center}
+#hbHidden{display:flex;gap:6px;flex-wrap:wrap}
+.hud-edit .hud-item{outline:2px dashed #ffb84d;outline-offset:3px}
+.hud-edit .hud-item.sel{outline:2px solid #fff}
+.hud-item.ghost{opacity:.3 !important}
+`;
+  var css = mk('style'); css.textContent = CSS; document.head.appendChild(css);
+
+  // ---------- DOM ----------
+  var pauseEl = mk('div'); pauseEl.id = 'pauseMenu';
+  pauseEl.innerHTML = '<div id="pauseTab"><h1>RANGE</h1><p class="sub">Paused</p>' +
+    '<button class="mbtn" id="pResume">RESUME</button><button class="mbtn alt" id="pSettings">SETTINGS</button>' +
+    (Game.isTouch ? '' : '<p class="hint">ESC TO PAUSE</p>') + '</div>';
+  var settingsEl = mk('div'); settingsEl.id = 'settingsMenu';
+  settingsEl.innerHTML = '<div class="sHead"><span class="sTitle">SETTINGS</span><button class="mini" id="sBack">BACK</button></div>' +
+    '<div class="tabs"><button class="tab on" data-t="GRAPHICS">GRAPHICS</button><button class="tab" data-t="GAME">GAME</button><button class="tab" data-t="CONTROLS">CONTROLS</button></div>' +
+    '<div class="sBody" id="sBody"></div>';
+  var hudBar = mk('div'); hudBar.id = 'hudBar';
+  hudBar.innerHTML = '<span id="hbName">-</span>' +
+    '<label class="lbl">SIZE <input type="range" id="hbSize" min="50" max="200" step="5"> <span id="hbSizeV"></span></label>' +
+    '<button class="mini" id="hbHide">HIDE</button><div id="hbHidden"></div>' +
+    '<button class="mini" id="hbReset">RESET ALL</button><button class="mini" id="hbDone">DONE</button>';
+  document.body.appendChild(pauseEl);
+  document.body.appendChild(settingsEl);
+  document.body.appendChild(hudBar);
+
+  // ---------- Pause / resume ----------
+  function showPause() { pauseEl.classList.add('on'); }
+  function hidePause() { pauseEl.classList.remove('on'); }
+  function openSettings() { settingsEl.classList.add('on'); renderTab(); }
+  function closeSettings() { settingsEl.classList.remove('on'); }
+
+  function openPause() {
+    if (!Game.started || R.paused || editing) return;
+    R.paused = true;
+    Player.keys = {}; Player.touchX = 0; Player.touchY = 0;
+    Game.firing = false; Game.aimHeld = false; Game.fDown = false;
+    Game.releaseGrab();
+    $('overlay').classList.add('hidden');
+    showPause();
+  }
+  function closePause() {
+    R.paused = false;
+    hidePause(); closeSettings();
+    if (!Game.isTouch) { try { Game.canvas.requestPointerLock(); } catch (e) {} }
+  }
+
+   var blurAt = -1e9;
+  window.addEventListener('blur', function () {
+    blurAt = performance.now();
+    Player.keys = {}; Game.firing = false; Game.aimHeld = false; Game.fDown = false;
+  });
+  document.addEventListener('pointerlockchange', function () {
+    if (!Game.started) return;
+    if (document.pointerLockElement === Game.canvas) {
+      if (R.paused) { R.paused = false; hidePause(); closeSettings(); }
+      return;
+    }
+    if (R.paused || editing) return;
+    // Lock lost while the window still has focus means the player pressed ESC: pause.
+    // Lock lost because the window lost focus (alt-tab, another app, tab switch): keep running.
+    var focused = document.hasFocus() && (performance.now() - blurAt > 1000);
+    if (focused) openPause();
+    else HUD.hint('CLICK TO CAPTURE MOUSE', 2.5);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.code !== 'Escape' || !Game.started || R.paused || editing) return;
+    openPause();
+  }, true);
+
+  // ---------- Settings UI ----------
+  function sliderRow(label, get, setter, min, max, step, fmt) {
+    var row = mk('div', 'row');
+    row.innerHTML = '<span class="lbl">' + label + '</span><input type="range" min="' + min + '" max="' + max + '" step="' + step + '" value="' + get() + '"><span class="val">' + fmt(get()) + '</span>';
+    var inp = row.querySelector('input'), val = row.querySelector('.val');
+    inp.addEventListener('input', function () { var v = parseFloat(inp.value); val.textContent = fmt(v); setter(v); });
+    return row;
+  }
+  function toggleRow(label, get, setter) {
+    var row = mk('div', 'row');
+    row.innerHTML = '<span class="lbl">' + label + '</span><button class="sw' + (get() ? ' on' : '') + '"></button>';
+    var btn = row.querySelector('.sw');
+    btn.addEventListener('click', function () { var on = !get(); setter(on); btn.classList.toggle('on', on); });
+    return row;
+  }
+  function buttonRow(label, text, fn) {
+    var row = mk('div', 'row');
+    row.innerHTML = '<span class="lbl">' + label + '</span><button class="mini">' + text + '</button>';
+    row.querySelector('button').addEventListener('click', fn);
+    return row;
+  }
+
+  function renderTab() {
+    var b = $('sBody'); b.innerHTML = '';
+    settingsEl.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-t') === activeTab); });
+    var pct = function (v) { return v + '%'; };
+    if (activeTab === 'GRAPHICS') {
+      b.appendChild(toggleRow('SHADOWS', function () { return !!S.shadows; }, function (v) { set('shadows', v); applyShadows(); }));
+      b.appendChild(sliderRow('3D RENDER SCALE', function () { return S.renderScale; }, function (v) { set('renderScale', v); applyScale(); }, 5, 100, 1, pct));
+      b.appendChild(toggleRow('FPS COUNTER', function () { return !!S.fpsCounter; }, function (v) { set('fpsCounter', v); setFpsCounter(v); }));
+           b.appendChild(sliderRow('MAX BLOOD DECALS', function () { return S.maxBlood; }, function (v) { set('maxBlood', v); }, 0, 500, 1, function (v) { return v === 0 ? 'UNLIMITED' : String(v); }));
+                    } else if (activeTab === 'GAME') {
+      var f2 = function (v) { return v.toFixed(2) + 'x'; };
+      b.appendChild(sliderRow('FOV', function () { return S.fov; }, function (v) { set('fov', v); Game.baseFov = v; }, 40, 120, 1, function (v) { return v + '°'; }));
+      b.appendChild(sliderRow('FREE-AIM SENSITIVITY', function () { return S.freeSens; }, function (v) { set('freeSens', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('FREE-AIM LIMIT', function () { return S.freeLimitDeg; }, function (v) { set('freeLimitDeg', v); }, 0, 30, 1, function (v) { return v + '°'; }));
+      b.appendChild(sliderRow('SLOWDOWN TIME-SCALE', function () { return S.slowScale; }, function (v) { set('slowScale', v); }, 0, 1, 0.01, f2));
+      b.appendChild(sliderRow('HOLO SENSITIVITY', function () { return S.holoSens; }, function (v) { set('holoSens', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('HOLO SWAY LIMIT', function () { return S.holoLimit; }, function (v) { set('holoLimit', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('VIEWMODEL BOB', function () { return S.bobMul; }, function (v) { set('bobMul', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('VIEWMODEL SWAY', function () { return S.swayMul; }, function (v) { set('swayMul', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('CAMERA RECOIL', function () { return S.camRecoilMul; }, function (v) { set('camRecoilMul', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('VIEWMODEL RECOIL', function () { return S.vmRecoilMul; }, function (v) { set('vmRecoilMul', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('CAMERA BOB', function () { return S.camBobMul; }, function (v) { set('camBobMul', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('JUMP TILT', function () { return S.jumpTiltMul; }, function (v) { set('jumpTiltMul', v); }, 0, 3, 0.01, f2));
+      b.appendChild(sliderRow('IMPACT DOT SIZE', function () { return S.dotSize; }, function (v) { set('dotSize', v); }, 0, 3, 0.01, f2));
+    } else {
+      if (!Game.isTouch) {
+        b.appendChild(sliderRow('MOUSE SENSITIVITY', function () { return S.mouseSens; }, function (v) { set('mouseSens', v); Player.mouseSens = v; }, 0.0005, 0.008, 0.0001, function (v) { return v.toFixed(4); }));
+      } else {
+        b.appendChild(buttonRow('HUD LAYOUT (SIZE, POSITION, SHOW / HIDE)', 'CUSTOMIZE', function () { closeSettings(); enterEdit(); }));
+      }
+    }
+  }
+  settingsEl.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () { activeTab = t.getAttribute('data-t'); renderTab(); });
+  });
+  $('sBack').addEventListener('click', closeSettings);
+  $('pResume').addEventListener('click', closePause);
+  $('pSettings').addEventListener('click', openSettings);
+
+  // ---------- Mobile HUD layout ----------
+  var items = [], base = {}, drag = null, sel = null, editing = false;
+
+  function collectItems() {
+    items = [];
+    var joy = $('joy');
+    if (joy) items.push({ key: 'joy', el: joy, label: 'MOVE STICK' });
+    document.querySelectorAll('#touchUI [data-act]').forEach(function (e) {
+      var key = e.getAttribute('data-act');
+      items.push({ key: key, el: e, label: e.textContent.trim() || key });
+    });
+  }
+  function captureBase() {
+    items.forEach(function (it) {
+      var r = it.el.getBoundingClientRect();
+      base[it.key] = { w: r.width, h: r.height, fs: parseFloat(getComputedStyle(it.el).fontSize) || 12, style: it.el.getAttribute('style') || '' };
+    });
+  }
+  function findItem(key) { for (var i = 0; i < items.length; i++) if (items[i].key === key) return items[i]; return null; }
+  function ensure(it) {
+    var L = S.hud[it.key];
+    if (!L) { var r = it.el.getBoundingClientRect(); L = S.hud[it.key] = { x: r.left, y: r.top, s: 1, hidden: false }; }
+    return L;
+  }
+  function applyItem(it) {
+    var e = it.el, b = base[it.key], L = S.hud[it.key];
+    if (!b) return;
+    e.classList.add('hud-item');
+    if (!L) { e.setAttribute('style', b.style); e.classList.remove('ghost'); return; }
+    var s = L.s || 1;
+    e.style.position = 'fixed';
+    e.style.left = L.x + 'px'; e.style.top = L.y + 'px';
+    e.style.right = 'auto'; e.style.bottom = 'auto'; e.style.transform = 'none';
+    e.style.width = (b.w * s) + 'px'; e.style.height = (b.h * s) + 'px';
+    e.style.fontSize = (b.fs * s) + 'px';
+    e.style.display = (L.hidden && !editing) ? 'none' : '';
+    e.classList.toggle('ghost', !!L.hidden && editing);
+  }
+  function applyAll() { items.forEach(applyItem); }
+
+  function select(key) { sel = key; refreshBar(); items.forEach(function (it) { it.el.classList.toggle('sel', it.key === sel); }); }
+  function refreshBar() {
+    var it = sel && findItem(sel), L = it && S.hud[sel];
+    $('hbName').textContent = it ? it.label : 'TAP AN ITEM';
+    var s = (L && L.s) || 1;
+    $('hbSize').value = Math.round(s * 100);
+    $('hbSizeV').textContent = Math.round(s * 100) + '%';
+    $('hbHide').disabled = !it;
+    $('hbHide').textContent = (L && L.hidden) ? 'SHOW' : 'HIDE';
+    var chips = $('hbHidden'); chips.innerHTML = '';
+    items.forEach(function (x) {
+      var h = S.hud[x.key];
+      if (h && h.hidden) {
+        var c = mk('button', 'mini', '+ ' + x.label);
+        c.addEventListener('click', function () { h.hidden = false; applyItem(x); save(); select(x.key); });
+        chips.appendChild(c);
+      }
+    });
+  }
+
+  function enterEdit() {
+    editing = true;
+    document.body.classList.add('hud-edit');
+    hidePause(); closeSettings();
+    applyAll(); select(null);
+    hudBar.classList.add('on');
+  }
+  function exitEdit() {
+    editing = false; drag = null; sel = null;
+    document.body.classList.remove('hud-edit');
+    hudBar.classList.remove('on');
+    applyAll(); save();
+    showPause();
+  }
+
+  $('hbSize').addEventListener('input', function () {
+    var it = sel && findItem(sel); if (!it) return;
+    ensure(it).s = parseFloat(this.value) / 100;
+    applyItem(it); save(); refreshBar();
+  });
+  $('hbHide').addEventListener('click', function () {
+    var it = sel && findItem(sel); if (!it) return;
+    var L = ensure(it); L.hidden = !L.hidden;
+    applyItem(it); save(); refreshBar();
+  });
+  $('hbReset').addEventListener('click', function () {
+    S.hud = {}; save(); applyAll(); select(null);
+  });
+  $('hbDone').addEventListener('click', exitEdit);
+
+  // While editing: touch on HUD items selects and drags them; other touch input is blocked
+  window.addEventListener('pointerdown', function (e) {
+    if (!editing) return;
+    var inTouch = e.target.closest && e.target.closest('#touchUI');
+    if (!inTouch) return;
+    e.stopPropagation();
+    var t = e.target.closest('#touchUI [data-act], #touchUI #joy');
+    if (!t) return;
+    e.preventDefault();
+    var it = items.filter(function (x) { return x.el === t; })[0];
+    if (!it) return;
+    select(it.key);
+    var L = ensure(it), r = t.getBoundingClientRect();
+    drag = { it: it, id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top };
+  }, true);
+  window.addEventListener('pointermove', function (e) {
+    if (!editing) return;
+    if (drag && e.pointerId === drag.id) {
+      var L = S.hud[drag.it.key], r = drag.it.el.getBoundingClientRect();
+      L.x = clamp(e.clientX - drag.dx, 0, window.innerWidth - r.width);
+      L.y = clamp(e.clientY - drag.dy, 0, window.innerHeight - r.height);
+      applyItem(drag.it);
+    }
+    if (e.target.closest && e.target.closest('#touchUI')) e.stopPropagation();
+  }, true);
+  window.addEventListener('pointerup', function (e) {
+    if (!editing) return;
+    if (drag && e.pointerId === drag.id) { drag = null; save(); }
+    if (e.target.closest && e.target.closest('#touchUI')) e.stopPropagation();
+  }, true);
+
+  // ---------- Start ----------
+  window.addEventListener('load', function () {
+    var touch = Game.isTouch;
+    if (S.shadows === undefined) S.shadows = !touch;
+    Player.mouseSens = S.mouseSens;
+    save();
+    applyShadows(); applyScale();
+
+    if (touch) {
+      var pb = mk('div', 'tb', 'PAUSE');
+      pb.id = 'bPause';
+      pb.setAttribute('data-act', 'pause');
+      pb.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);width:84px;height:40px;';
+      $('touchUI').appendChild(pb);
+      pb.addEventListener('pointerdown', function (e) { e.preventDefault(); openPause(); });
+      collectItems();
+      captureBase();
+      applyAll();
+    }
+  });
+})();
+</script>
+<script>
+(function () {
+  // Sight line used for ironsight / holo firing: eye -> front post (or eye -> red dot)
+  Game.sightDir = function (gunDir) {
+    var w = Inventory.current();
+    var root = ViewModel.current && ViewModel.current.model.root;
+    if (!w || !root) return gunDir.clone();
+    root.updateMatrixWorld(true);
+    var eye = this.camera.position;
+    var p;
+    if (root.userData.holo) {
+      p = new THREE.Vector3();
+      root.userData.holo.dot.getWorldPosition(p);
+    } else {
+      var S = SIGHTS[w.def.model];
+      p = new THREE.Vector3(0, S.y, S.fz).applyMatrix4(root.matrixWorld);
+    }
+    var d = p.sub(eye);
+    if (d.lengthSq() < 1e-8) return gunDir.clone();
+    return d.normalize();
+  };
+
+  // White impact dot: where a bullet fired straight down the barrel would land (non-ADS only)
+  var dotEl = document.createElement('div');
+  dotEl.id = 'impactDot';
+  dotEl.style.cssText = 'position:fixed;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#fff;box-shadow:0 0 3px rgba(0,0,0,.9);pointer-events:none;z-index:4;display:none';
+  document.body.appendChild(dotEl);
+
+  var ray = new THREE.Raycaster();
+  var tmp = new THREE.Vector3();
+
+  Game.updateImpactDot = function () {
+    var w = Inventory.current();
+    var show = this.started && !!w && !!ViewModel.current && !Player.aiming &&
+               ViewModel.aim < 0.05 && !document.body.classList.contains('hud-edit') &&
+               !(window.Settings && Settings.paused);
+    if (!show) { dotEl.style.display = 'none'; return; }
+
+    var muzzle = ViewModel.getMuzzleWorld();
+    var dir = ViewModel.getMuzzleDir();
+    ray.set(muzzle, dir);
+    ray.far = 500;
+    var hits = ray.intersectObjects(GameMap.solids, false);
+    if (!hits.length) { dotEl.style.display = 'none'; return; }
+
+    tmp.copy(hits[0].point).project(this.camera);
+    if (tmp.z > 1 || tmp.z < -1) { dotEl.style.display = 'none'; return; }
+    dotEl.style.left = ((tmp.x + 1) / 2 * window.innerWidth) + 'px';
+    dotEl.style.top = ((1 - tmp.y) / 2 * window.innerHeight) + 'px';
+    dotEl.style.display = 'block';
+  };
+
+  // Update the dot right before each frame is drawn, after all positions have been set this frame
+  window.addEventListener('load', function () {
+    var rdr = Game.renderer;
+    if (!rdr) return;
+    var _render = rdr.render;
+    rdr.render = function (scene, cam) {
+      Game.updateImpactDot();
+      return _render.call(this, scene, cam);
+    };
+  });
+})();
+</script>
+<script>
+(function () {
+  var LAG = 0.15;
+  ViewModel.updateHolo = function (holo, dt) {
+    var P = Player, cam = P.camera, h = this.holoS;
+    var sens = (window.Settings && Settings.holoSens != null) ? Settings.holoSens : 1;
+    var limit = (window.Settings && Settings.holoLimit != null) ? Settings.holoLimit : 1;
+    var pv = this._hp;
+    if (!pv) {
+      pv = this._hp = { yaw: P.yaw, pitch: P.pitch, x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    }
+
+    // Internal state: pushed by look and movement, with no sensitivity applied here
+    var K = 0.0035 / P.mouseSens;
+    h.vx += -(P.yaw - pv.yaw) * K;
+    h.vy +=  (P.pitch - pv.pitch) * K;
+
+    var q = cam.quaternion, qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+    var rx = 1 - 2 * (qy * qy + qz * qz), ry = 2 * (qx * qy + qw * qz), rz = 2 * (qx * qz - qw * qy);
+    var ux = 2 * (qx * qy - qw * qz),     uy = 1 - 2 * (qx * qx + qz * qz), uz = 2 * (qy * qz + qw * qx);
+    var dx = cam.position.x - pv.x, dy = cam.position.y - pv.y, dz = cam.position.z - pv.z;
+    h.vx -= (dx * rx + dy * ry + dz * rz) * LAG;
+    h.vy -= (dx * ux + dy * uy + dz * uz) * LAG;
+
+    pv.yaw = P.yaw; pv.pitch = P.pitch;
+    pv.x = cam.position.x; pv.y = cam.position.y; pv.z = cam.position.z;
+
+    // Spring back to centre
+    h.vx += (-70 * h.x - 9 * h.vx) * dt; h.x += h.vx * dt;
+    h.vy += (-70 * h.y - 9 * h.vy) * dt; h.y += h.vy * dt;
+    var sr = Math.sqrt(h.x * h.x + h.y * h.y);
+    if (sr > 0.2) { var sk = 0.2 / sr; h.x *= sk; h.y *= sk; }
+
+    // Drawn offset: sensitivity is a direct multiplier, then the sway limit caps it
+    var ox = h.x * sens, oy = h.y * sens;
+    var maxR = 0.045 * limit;
+    var r = Math.sqrt(ox * ox + oy * oy);
+    if (r > maxR) { var k2 = maxR / r; ox *= k2; oy *= k2; }
+    holo.reticle.position.set(ox, oy, 0.057);
+  };
+})();
+</script><script>
+(function () {
+  var _d = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _w = new THREE.Vector3();
+
+  function setSegS(mesh, a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    mesh.position.set((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5);
+    if (len > 1e-6) {
+      _d.set(dx / len, dy / len, dz / len);
+      mesh.quaternion.setFromUnitVectors(_up, _d);
+    }
+    mesh.scale.set(1, len, 1);
+  }
+
+  ViewModel.setSeg = setSegS;
+  Legs.setSeg = setSegS;
+
+  // Sleeves: forearm from the elbow to the wrist, upper arm from the shoulder to the elbow
+  ViewModel.setArm = function (arm, rig) {
+    if (!rig) { arm.fore.visible = false; arm.upper.visible = false; return; }
+    arm.fore.visible = true; arm.upper.visible = true;
+    _w.set(0, -0.06, 0);
+    rig.root.localToWorld(_w);
+    this.group.worldToLocal(_w);
+    this.setSeg(arm.fore, arm.elbow, _w);
+    this.setSeg(arm.upper, arm.shoulder, arm.elbow);
+  };
+})();
+</script><script>
+(function () {
+  var _ra = [0,0,0], _rb = [0,0,0], _pa = [0,0,0], _pb = [0,0,0], _rel = [0,0,0];
+  var _t1 = [0,0,0], _t2 = [0,0,0], _t3 = [0,0,0], _t4 = [0,0,0], _t5 = [0,0,0], _t6 = [0,0,0], _pc = [0,0,0];
+  var _ck = [0,0,0], _ke = [0,0,0], _kc = [0,0,0], _kK = [[0,0,0],[0,0,0],[0,0,0]];
+  var _s1 = [0,0,0], _s2 = [0,0,0], _s3 = [0,0,0], _s4 = [0,0,0];
+  var _imp = [0,0,0], _cra = [0,0,0], _crb = [0,0,0];
+
+  // Cross product into o
+  function crossS(a, b, o) {
+    o[0] = a[1] * b[2] - a[2] * b[1];
+    o[1] = a[2] * b[0] - a[0] * b[2];
+    o[2] = a[0] * b[1] - a[1] * b[0];
+    return o;
+  }
+
+  // Quaternion rotation into o. s = 1 rotates by q, s = -1 rotates by the conjugate (same as Qt.rot / Qt.conj)
+  function rotS(q, v, o, s) {
+    var ux = s * q[1], uy = s * q[2], uz = s * q[3], w = q[0];
+    var c1x = uy * v[2] - uz * v[1], c1y = uz * v[0] - ux * v[2], c1z = ux * v[1] - uy * v[0];
+    var c2x = uy * c1z - uz * c1y,   c2y = uz * c1x - ux * c1z,   c2z = ux * c1y - uy * c1x;
+    o[0] = v[0] + 2 * (w * c1x + c2x);
+    o[1] = v[1] + 2 * (w * c1y + c2y);
+    o[2] = v[2] + 2 * (w * c1z + c2z);
+    return o;
+  }
+
+  // Inverse world inertia applied to v, into o (o must not be _t1)
+  function invIwS(b, v, o) {
+    if (b.invM === 0 && b.invIl[0] === 0) { o[0] = 0; o[1] = 0; o[2] = 0; return o; }
+    rotS(b.q, v, _t1, -1);
+    _t1[0] *= b.invIl[0]; _t1[1] *= b.invIl[1]; _t1[2] *= b.invIl[2];
+    return rotS(b.q, _t1, o, 1);
+  }
+
+  // Point velocity of body b at offset r, into o
+  function pointVelS(b, r, o) {
+    crossS(b.w, r, _pc);
+    o[0] = b.v[0] + _pc[0]; o[1] = b.v[1] + _pc[1]; o[2] = b.v[2] + _pc[2];
+    return o;
+  }
+
+  // Relative point velocity (B minus A), into o
+  function relS(A, B, ra, rb, o) {
+    pointVelS(B, rb, _pa); pointVelS(A, ra, _pb);
+    o[0] = _pa[0] - _pb[0]; o[1] = _pa[1] - _pb[1]; o[2] = _pa[2] - _pb[2];
+    return o;
+  }
+
+  // Velocity change at the anchor per unit impulse along e, into o
+  function applyKS(A, B, ra, rb, e, o) {
+    crossS(rb, e, _t2); invIwS(B, _t2, _t3);
+    crossS(ra, e, _t2); invIwS(A, _t2, _t4);
+    crossS(_t3, rb, _t5); crossS(_t4, ra, _t6);
+    var s = A.invM + B.invM;
+    o[0] = e[0] * s + _t5[0] + _t6[0];
+    o[1] = e[1] * s + _t5[1] + _t6[1];
+    o[2] = e[2] * s + _t5[2] + _t6[2];
+    return o;
+  }
+
+  // Apply an impulse at the anchor points: B gets +imp, A gets -imp
+  function applyImpS(A, B, ra, rb, imp) {
+    crossS(rb, imp, _t2); invIwS(B, _t2, _t3);
+    B.v[0] += imp[0] * B.invM; B.v[1] += imp[1] * B.invM; B.v[2] += imp[2] * B.invM;
+    B.w[0] += _t3[0]; B.w[1] += _t3[1]; B.w[2] += _t3[2];
+    crossS(ra, imp, _t2); invIwS(A, _t2, _t3);
+    A.v[0] -= imp[0] * A.invM; A.v[1] -= imp[1] * A.invM; A.v[2] -= imp[2] * A.invM;
+    A.w[0] -= _t3[0]; A.w[1] -= _t3[1]; A.w[2] -= _t3[2];
+  }
+
+  // Angular impulse: B gets +tau, A gets -tau
+  function applyTorS(A, B, tau) {
+    invIwS(B, tau, _t3);
+    B.w[0] += _t3[0]; B.w[1] += _t3[1]; B.w[2] += _t3[2];
+    invIwS(A, tau, _t3);
+    A.w[0] -= _t3[0]; A.w[1] -= _t3[1]; A.w[2] -= _t3[2];
+  }
+
+  // Changes the relative angular velocity along e so that its rate becomes target
+  function solveAngS(A, B, e, target) {
+    invIwS(B, e, _s1); invIwS(A, e, _s2);
+    var r = e[0] * (B.w[0] - A.w[0]) + e[1] * (B.w[1] - A.w[1]) + e[2] * (B.w[2] - A.w[2]);
+    var k = e[0] * (_s1[0] + _s2[0]) + e[1] * (_s1[1] + _s2[1]) + e[2] * (_s1[2] + _s2[2]);
+    if (k < 1e-10) return;
+    var s = (target - r) / k;
+    _s3[0] = e[0] * s; _s3[1] = e[1] * s; _s3[2] = e[2] * s;
+    invIwS(B, _s3, _s4);
+    B.w[0] += _s4[0]; B.w[1] += _s4[1]; B.w[2] += _s4[2];
+    invIwS(A, _s3, _s4);
+    A.w[0] -= _s4[0]; A.w[1] -= _s4[1]; A.w[2] -= _s4[2];
+  }
+
+  // Ball joint: the two anchor points must coincide
+  function solveAnchS(j, h) {
+    var A = j.a, B = j.b;
+    rotS(A.q, j.pa, _ra, 1); rotS(B.q, j.pb, _rb, 1);
+    var cx = B.x[0] - A.x[0] + _rb[0] - _ra[0];
+    var cy = B.x[1] - A.x[1] + _rb[1] - _ra[1];
+    var cz = B.x[2] - A.x[2] + _rb[2] - _ra[2];
+    relS(A, B, _ra, _rb, _rel);
+    var g = PHYS.BETA / h;
+    var vx = cx * g, vy = cy * g, vz = cz * g;
+    var cl = Math.sqrt(vx * vx + vy * vy + vz * vz);
+    if (cl > 1.5) { var sc = 1.5 / cl; vx *= sc; vy *= sc; vz *= sc; }
+    var rhs = [-(_rel[0] + vx), -(_rel[1] + vy), -(_rel[2] + vz)];
+    for (var c = 0; c < 3; c++) {
+      _ke[0] = 0; _ke[1] = 0; _ke[2] = 0; _ke[c] = 1;
+      applyKS(A, B, _ra, _rb, _ke, _kc);
+      _kK[0][c] = _kc[0]; _kK[1][c] = _kc[1]; _kK[2][c] = _kc[2];
+    }
+    var lam = solve3(_kK, rhs);
+    if (lam) applyImpS(A, B, _ra, _rb, lam);
+  }
+
+  // Contact: normal and friction impulses
+  function solveConS(c, h) {
+    var A = c.A, B = c.B, n = c.n;
+    _cra[0] = c.p[0] - A.x[0]; _cra[1] = c.p[1] - A.x[1]; _cra[2] = c.p[2] - A.x[2];
+    _crb[0] = c.p[0] - B.x[0]; _crb[1] = c.p[1] - B.x[1]; _crb[2] = c.p[2] - B.x[2];
+    var ra = _cra, rb = _crb;
+    relS(A, B, ra, rb, _rel);
+    var vn = n[0] * _rel[0] + n[1] * _rel[1] + n[2] * _rel[2];
+    applyKS(A, B, ra, rb, n, _ck);
+    var kn = n[0] * _ck[0] + n[1] * _ck[1] + n[2] * _ck[2];
+    if (kn < 1e-9) return;
+    var bias = Math.min(1.5, PHYS.BETA * Math.max(0, c.d - PHYS.SLOP) / h);
+    var lam = (bias - vn) / kn;
+    var acc = Math.max(0, c.lam + lam);
+    lam = acc - c.lam; c.lam = acc;
+    if (lam !== 0) {
+      _imp[0] = n[0] * lam; _imp[1] = n[1] * lam; _imp[2] = n[2] * lam;
+      applyImpS(A, B, ra, rb, _imp);
+      relS(A, B, ra, rb, _rel);
+    }
+    for (var k = 0; k < 2; k++) {
+      var t = k === 0 ? c.t1 : c.t2;
+      var vt = t[0] * _rel[0] + t[1] * _rel[1] + t[2] * _rel[2];
+      applyKS(A, B, ra, rb, t, _ck);
+      var kt = t[0] * _ck[0] + t[1] * _ck[1] + t[2] * _ck[2];
+      if (kt < 1e-9) continue;
+      var lt = -vt / kt;
+      var maxF = PHYS.MU * c.lam;
+      var prev = k === 0 ? c.lt1 : c.lt2;
+      var now = Math.max(-maxF, Math.min(maxF, prev + lt));
+      lt = now - prev;
+      if (k === 0) c.lt1 = now; else c.lt2 = now;
+      if (lt !== 0) {
+        _imp[0] = t[0] * lt; _imp[1] = t[1] * lt; _imp[2] = t[2] * lt;
+        applyImpS(A, B, ra, rb, _imp);
+        relS(A, B, ra, rb, _rel);
+      }
+    }
+  }
+
+  // Quaternion integration in place: q' = normalize(q + h/2 * (0, w) * q)
+  function integrateInPlace(b, h) {
+    var q = b.q, w = b.w;
+    var qw = q[0], qx = q[1], qy = q[2], qz = q[3];
+    var wx = w[0], wy = w[1], wz = w[2];
+    var r0 = -(wx * qx + wy * qy + wz * qz);
+    var r1 = wx * qw + wy * qz - wz * qy;
+    var r2 = -wx * qz + wy * qw + wz * qx;
+    var r3 = wx * qy - wy * qx + wz * qw;
+    var nw = qw + 0.5 * h * r0, nx = qx + 0.5 * h * r1, ny = qy + 0.5 * h * r2, nz = qz + 0.5 * h * r3;
+    var l = Math.sqrt(nw * nw + nx * nx + ny * ny + nz * nz) || 1;
+    q[0] = nw / l; q[1] = nx / l; q[2] = ny / l; q[3] = nz / l;
+  }
+
+  // Swap in the scratch versions. Callers elsewhere use these names, so they pick up the new code.
+  window.invIwS = invIwS;
+  window.applyImpulse = function (A, B, ra, rb, imp) { applyImpS(A, B, ra, rb, imp); };
+  window.applyTorque = function (A, B, tau) { applyTorS(A, B, tau); };
+  window.solveAngular = function (A, B, e, target) { solveAngS(A, B, e, target); };
+  window.solveAnchor = function (j, h) { solveAnchS(j, h); };
+  window.solveContact = function (c, h) { solveConS(c, h); };
+
+  // Ragdoll step: same as before, but body positions and orientations are integrated in place
+  Ragdoll.step = function (dt) {
+    if (dt <= 0) return;
+    var sub = Math.max(1, Math.min(PHYS.SUB_MAX, Math.ceil(dt / PHYS.SUB_DT)));
+    var h = dt / sub;
+    for (var s = 0; s < sub; s++) {
+      for (var i = 0; i < Humans.list.length; i++) applyHumanForces(Humans.list[i], h);
+      var bodies = PHYS.bodies, n = bodies.length;
+      for (var b = 0; b < n; b++) {
+        var hb = bodies[b].human;
+        bodies[b].v[1] -= PHYS.G * h * (hb.dead || bodies[b].free ? 1 : 1 - hb.ropeS);
+      }
+      var contacts = collectContacts();
+      var joints = PHYS.joints, nj = joints.length;
+      for (var it = 0; it < PHYS.ITER; it++) {
+        for (var j = 0; j < nj; j++) solveJoint(joints[j], h);
+        for (var c = 0; c < contacts.length; c++) solveContact(contacts[c], h);
+      }
+      for (var k = 0; k < n; k++) {
+        var bb = bodies[k];
+        bb.x[0] += bb.v[0] * h; bb.x[1] += bb.v[1] * h; bb.x[2] += bb.v[2] * h;
+        integrateInPlace(bb, h);
+      }
+    }
+  };
+})();
+</script><script>
+(function () {
+  var BLOOD_TEX = null;
+
+  function bloodTextures() {
+    return [Decals.tex.wound, Decals.tex.blood, Decals.tex.drag];
+  }
+
+  // Remove every blood mark: wound and blood decals, drag smears, floor pools, wound holes on bodies, and droplets
+  function clearAllBlood() {
+    var blood = bloodTextures();
+    var kill = [];
+    Game.scene.traverse(function (o) {
+      if (!o.userData || !o.userData.decal) return;
+      var map = o.material && o.material.map;
+      var onBody = !!(o.parent && o.parent.userData && o.parent.userData.target);
+      if (o.userData.pool || o.userData.smear || blood.indexOf(map) >= 0) kill.push(o);
+      else if (onBody && map === Decals.tex.hole) kill.push(o);   // hole left by a wound on a body
+    });
+    kill.forEach(function (m) {
+      if (m.parent) m.parent.remove(m);
+      Decals.decalCount--;
+    });
+
+    Decals.pools.length = 0;
+    Decals.smears.length = 0;
+
+    for (var i = 0; i < Decals.droplets.length; i++) {
+      var d = Decals.droplets[i];
+      if (d.mesh.parent) d.mesh.parent.remove(d.mesh);
+    }
+    Decals.droplets.length = 0;
+
+    for (var h = 0; h < Humans.list.length; h++) {
+      Humans.list[h].wounds = [];
+      Humans.list[h].smears = [];
+    }
+  }
+
+  // Respawn every NPC (alive or dead), then clear all blood
+  function fullRespawn() {
+    if (!Game.started) return;
+    Game.releaseGrab();
+    for (var i = 0; i < Humans.list.length; i++) Humans.respawn(Humans.list[i]);
+    clearAllBlood();
+    HUD.hint('ALL TARGETS RESPAWNED · BLOOD CLEARED', 1.4);
+  }
+
+  // Backspace: capture phase, so the original handler (which only respawns downed targets) never runs
+  window.addEventListener('keydown', function (e) {
+    if (e.code !== 'Backspace') return;
+    if (!Game.started || (window.Settings && Settings.paused)) return;
+    if (document.body.classList.contains('hud-edit')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    fullRespawn();
+  }, true);
+
+  // Mobile RESPAWN button uses the same action
+  var _touchAct = Game.touchAct;
+  Game.touchAct = function (act, down) {
+    if (act === 'respawn') { if (down) fullRespawn(); return; }
+    return _touchAct.call(this, act, down);
+  };
+})();
+</script>
+<script>
+(function () {
+  // Remove shells, muzzle smoke, sparks, tracers, bullets in flight, and bullet holes on surfaces (not on bodies)
+  function clearEffects() {
+    var scene = Game.scene;
+    var kill = [];
+    scene.traverse(function (o) {
+      if (!o.userData || !o.userData.decal || o.userData.pool || o.userData.smear) return;
+      var map = o.material && o.material.map;
+      var onBody = !!(o.parent && o.parent.userData && o.parent.userData.target);
+      if (!onBody && (map === Decals.tex.scorch || map === Decals.tex.core || map === Decals.tex.hole)) kill.push(o);
+    });
+    kill.forEach(function (m) {
+      if (m.parent) m.parent.remove(m);
+      Decals.decalCount--;
+    });
+
+    Effects.shells.forEach(function (s) { scene.remove(s.mesh); });
+    Effects.shells.length = 0;
+
+    Effects.smokes.forEach(function (sm) { scene.remove(sm.sp); sm.sp.material.dispose(); });
+    Effects.smokes.length = 0;
+
+    Effects.sparks.forEach(function (sp) { scene.remove(sp.mesh); });
+    Effects.sparks.length = 0;
+
+    Effects.tracers.forEach(function (t) { scene.remove(t.obj); t.obj.geometry.dispose(); t.obj.material.dispose(); });
+    Effects.tracers.length = 0;
+
+    Effects.bullets.length = 0;
+  }
+
+  // Backspace: runs alongside the existing handler, with the same guards
+  window.addEventListener('keydown', function (e) {
+    if (e.code !== 'Backspace') return;
+    if (!Game.started || (window.Settings && Settings.paused)) return;
+    if (document.body.classList.contains('hud-edit')) return;
+    clearEffects();
+  }, true);
+
+  // Mobile RESPAWN button also clears effects
+  var _touchAct2 = Game.touchAct;
+  Game.touchAct = function (act, down) {
+    if (act === 'respawn' && down && Game.started) clearEffects();
+    return _touchAct2.call(this, act, down);
+  };
+
+  // Remove the old centre overlay (the RESUME / CLICK TO RESUME menu). Pause uses the left panel now.
+  var st = document.createElement('style');
+  st.textContent = 'body.started #overlay{display:none !important}';
+  document.head.appendChild(st);
+  document.getElementById('startBtn').addEventListener('click', function () {
+    document.body.classList.add('started');
+  });
+})();
+</script>
+<script>
+(function () {
+  // Free aim: snap the offset back to centre the moment the player leaves ADS.
+  // While aiming the offset is frozen, and the gun's blend back to hip is already at 0, so the snap is not visible.
+  var _ufa = Game.updateFreeAim;
+  Game.updateFreeAim = function (dt) {
+    if (this._wasAim && !Player.aiming) { this.freeYaw = 0; this.freePitch = 0; }
+    this._wasAim = Player.aiming;
+    return _ufa.call(this, dt);
+  };
+
+  // Viewmodel bob and sway multipliers: read from settings each frame, used by ViewModel.update
+  var _vmu = ViewModel.update;
+  ViewModel.update = function (dt, input) {
+    var s = window.Settings;
+    this.bobMul = (s && s.bobMul != null) ? s.bobMul : 1;
+    this.swayMul = (s && s.swayMul != null) ? s.swayMul : 1;
+    return _vmu.call(this, dt, input);
+  };
+
+  // White impact dot opacity from settings (0 to 1)
+  var _uid = Game.updateImpactDot;
+  Game.updateImpactDot = function () {
+    _uid.call(this);
+    var el = document.getElementById('impactDot');
+    if (el && window.Settings && Settings.dotOpacity != null) el.style.opacity = Settings.dotOpacity;
+  };
+})();
+</script>
+<script>
+(function () {
+  // Impact dot size (replaces the opacity slider). The dot stays fully opaque.
+  var _uid = Game.updateImpactDot;
+  Game.updateImpactDot = function () {
+    _uid.call(this);
+    var el = document.getElementById('impactDot');
+    if (!el) return;
+    var s = (window.Settings && Settings.dotSize != null) ? Settings.dotSize : 1;
+    el.style.width = (8 * s) + 'px';
+    el.style.height = (8 * s) + 'px';
+    el.style.margin = (-4 * s) + 'px 0 0 ' + (-4 * s) + 'px';
+    el.style.opacity = 1;
+  };
+
+  // Camera and viewmodel recoil multipliers.
+  // Each shot adds to the recoil values. We measure that change and scale it.
+  // Camera recoil: pitch, yaw, roll and the FOV punch. Viewmodel recoil: the gun's recoil springs.
+  var _fire = Game.fire;
+  Game.fire = function (w) {
+    var P = Player, G = this, vm = ViewModel;
+    var p0 = P.pitch, y0 = P.yaw, r0 = G.rollVel, f0 = G.fovVel;
+    var z0 = vm.recoilZ.v, rp0 = vm.recoilPitch.v, ry0 = vm.recoilYaw.v;
+
+    var res = _fire.call(this, w);
+
+    var s = window.Settings || {};
+    var cm = (s.camRecoilMul != null) ? s.camRecoilMul : 1;
+    var vmm = (s.vmRecoilMul != null) ? s.vmRecoilMul : 1;
+
+    P.pitch = p0 + (P.pitch - p0) * cm;
+    P.yaw = y0 + (P.yaw - y0) * cm;
+    G.rollVel = r0 + (G.rollVel - r0) * cm;
+    G.fovVel = f0 + (G.fovVel - f0) * cm;
+
+    vm.recoilZ.v = z0 + (vm.recoilZ.v - z0) * vmm;
+    vm.recoilPitch.v = rp0 + (vm.recoilPitch.v - rp0) * vmm;
+    vm.recoilYaw.v = ry0 + (vm.recoilYaw.v - ry0) * vmm;
+
+    return res;
+  };
+})();
+</script>
+<script>
+(function () {
+  var bobPh = 0, bobAmt = 0, tilt = 0;
+  var _pu = Player.update;
+  Player.update = function (dt) {
+    _pu.call(this, dt);   // sets camera position and rotation for this frame
+
+    var s = window.Settings || {};
+    var bm = (s.camBobMul != null) ? s.camBobMul : 1;
+    var tm = (s.jumpTiltMul != null) ? s.jumpTiltMul : 1;
+    var cam = this.camera;
+
+    // Walking bob: amount eases in and out with speed, step rate follows speed and running
+    var spd = Math.hypot(this.vel.x, this.vel.z);
+    var walking = (this.onGround && spd > 0.3) ? 1 : 0;
+    bobAmt += (walking * Math.min(1, spd / 4.4) - bobAmt) * Math.min(1, dt * 8);
+    bobPh += dt * (walking ? (this.running ? 14 : this.crouched ? 6 : 9) * Math.max(0.4, spd / 4.4) : 0);
+
+    var vert = Math.sin(bobPh * 2) * 0.022 * bobAmt * bm;
+    var lat = Math.sin(bobPh) * 0.014 * bobAmt * bm;
+    var roll = Math.sin(bobPh) * 0.012 * bobAmt * bm;
+
+    var right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    cam.position.y += vert;
+    cam.position.addScaledVector(right, lat);
+    cam.rotation.z += roll;
+
+    // Jump tilt: look slightly up while rising, slightly down while falling
+    var target = this.onGround ? 0 : Math.max(-0.05, Math.min(0.05, this.vy * 0.008));
+    tilt += (target - tilt) * Math.min(1, dt * 10);
+    cam.rotation.x += tilt * tm;
+  };
+})();
+</script>
+<script>
+window.addEventListener('load', function () {
+  var isTouch = Game.isTouch;
+
+  // Item 43: smaller shadow map on mobile
+  var sun = null;
+  Game.scene.traverse(function (o) { if (o.isDirectionalLight && o.castShadow && !sun) sun = o; });
+  if (sun && isTouch) {
+    sun.shadow.mapSize.set(1024, 1024);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+
+  // Item 98: mobile pixel ratio capped at 1.0. Item 48: dynamic scale on top of the user's render scale.
+  var dyn = 1;
+  function base() { return Math.min(window.devicePixelRatio || 1, isTouch ? 1.0 : 2); }
+  window.applyPixelRatio = function () {
+    var u = (window.userRenderScale != null) ? window.userRenderScale : 1;
+    Game.renderer.setPixelRatio(Math.max(0.05, base() * u * dyn));
+  };
+  window.applyPixelRatio();
+
+  // Item 48: every 60 frames, lower the resolution if frames are slow, raise it if they are fast
+  var _render = Game.renderer.render;
+  var lastT = 0, acc = 0, n = 0;
+  Game.renderer.render = function (scene, cam) {
+    var now = performance.now();
+    if (lastT) { acc += now - lastT; n++; }
+    lastT = now;
+    if (n >= 60) {
+      var avg = acc / n;
+      acc = 0; n = 0;
+      var prev = dyn;
+      if (avg > 20 && dyn > 0.6) dyn = Math.max(0.6, dyn - 0.05);
+      else if (avg < 16.8 && dyn < 1) dyn = Math.min(1, dyn + 0.05);
+      if (dyn !== prev) window.applyPixelRatio();
+    }
+    return _render.call(this, scene, cam);
+  };
+});
+</script>
+<script>
+(function () {
+  var C = {}, acc = 0;
+  function txt(el, k, v) { if (C[k] !== v) { C[k] = v; el.textContent = v; } }
+  function sty(el, k, p, v) { var key = k + p; if (C[key] !== v) { C[key] = v; el.style[p] = v; } }
+  function cls(el, k, name, on) { if (C[k] !== on) { C[k] = on; el.classList.toggle(name, on); } }
+
+  HUD.update = function (dt, st) {
+    acc += dt;
+    if (acc < 1 / 15) return;
+    var d = acc; acc = 0;
+    var el = this.el;
+
+    var pct = st.stamina / st.maxStamina * 100;
+    sty(el.staminaFill, 'sf', 'width', pct.toFixed(1) + '%');
+    cls(el.staminaFill, 'sfl', 'low', !!(st.exhausted || pct < 25));
+    sty(el.stamina, 'sa', 'opacity', (st.running || pct < 99) ? '1' : '0.55');
+
+    sty(el.leanInd, 'li', 'opacity', st.lean !== 0 ? '1' : '0');
+    if (el.leanGroup) {
+      var lt = 'translate(60 60) rotate(' + (st.lean * 40).toFixed(2) + ')';
+      if (C.lt !== lt) { C.lt = lt; el.leanGroup.setAttribute('transform', lt); }
+    }
+
+    if (this.hintT > 0) { this.hintT -= d; if (this.hintT <= 0) el.hint.classList.remove('show'); }
+
+    var w = st.weapon;
+    if (w) {
+      txt(el.wName, 'wn', w.def.name + '  ·  SLOT ' + w.def.slot);
+      txt(el.ammoMag, 'am', String(w.mag).padStart(2, '0'));
+      txt(el.ammoRes, 'ar', isFinite(w.reserve) ? String(w.reserve).padStart(3, '0') : '∞');
+      var frac = w.mag / w.def.magSize;
+      sty(el.ammoFill, 'af', 'width', (frac * 100).toFixed(1) + '%');
+      cls(el.ammo, 'al', 'low', frac <= 0.25);
+      txt(el.fireMode, 'fm', (w.def.auto ? 'AUTO' : 'SEMI') + '  ·  ' +
+        (w.def.pellets > 1 ? w.def.pellets + ' PELLETS' : w.def.shellType === 'shell' ? 'SHELLS' : 'FMJ'));
+      sty(el.ammo, 'ad', 'display', 'block');
+    } else {
+      txt(el.wName, 'wn', 'UNARMED');
+      txt(el.ammoMag, 'am', '--');
+      txt(el.ammoRes, 'ar', '---');
+      sty(el.ammoFill, 'af', 'width', '0%');
+      txt(el.fireMode, 'fm', 'PRESS F AT THE TABLE');
+      cls(el.ammo, 'al', 'low', false);
+    }
+  };
+
+  // Inventory: rebuild the slot markup only when the text actually changes
+  var invLast = '';
+  HUD.renderInventory = function (inv) {
+    var html = '';
+    for (var i = 0; i < 4; i++) {
+      var w = inv.slots[i];
+      var c = 'slot' + (i === inv.active ? ' active' : '') + (w ? '' : ' empty');
+      html += '<div class="' + c + '"><span class="num">' + (i + 1) + '</span>' +
+        (w ? '<span>' + w.def.name + '</span><span class="ammoTxt">' + w.mag + ' / ' +
+          (isFinite(w.reserve) ? w.reserve : '∞') + '</span>' : '<span>EMPTY</span>') + '</div>';
+    }
+    if (html !== invLast) { invLast = html; HUD.el.invSlots.innerHTML = html; }
+  };
+})();
+</script>
+<script>
+(function () {
+  // Item 40: static world meshes don't need their matrix recomputed every frame.
+  // Only meshes in GameMap.solids that aren't human parts are touched. Pickups, shells, Legs and the viewmodel are not in that list.
+  window.addEventListener('load', function () {
+    GameMap.solids.forEach(function (m) {
+      if (m.userData.target) return;
+      m.matrixAutoUpdate = false;
+      m.updateMatrix();
+    });
+  });
+
+  // Item 64 / 66: cap shells, smoke and sparks. The oldest is removed from the scene when the cap is reached.
+  var CAPS = { shells: 40, smokes: 120, sparks: 150 };
+  var _ss = Effects.spawnShell, _sm = Effects.spawnSmoke, _sp = Effects.spawnSpark;
+  Effects.spawnShell = function () {
+    while (this.shells.length >= CAPS.shells) { var s = this.shells.shift(); this.scene.remove(s.mesh); }
+    return _ss.apply(this, arguments);
+  };
+  Effects.spawnSmoke = function () {
+    var extra = 3;
+    while (this.smokes.length + extra > CAPS.smokes) {
+      var sm = this.smokes.shift(); this.scene.remove(sm.sp); sm.sp.material.dispose();
+    }
+    return _sm.apply(this, arguments);
+  };
+  Effects.spawnSpark = function () {
+    while (this.sparks.length + 6 > CAPS.sparks) { var sp = this.sparks.shift(); this.scene.remove(sp.mesh); }
+    return _sp.apply(this, arguments);
+  };
+
+  // Item 89: impact dot raycast every other frame (the dot can lag by one frame, which is not visible)
+  var _uid2 = Game.updateImpactDot, uf = 0;
+  Game.updateImpactDot = function () {
+    uf++;
+    if (uf % 2) return;
+    return _uid2.call(this);
+  };
+
+  // Item 45: cheaper hard-edged shadow filter
+  window.addEventListener('load', function () {
+    Game.renderer.shadowMap.type = THREE.PCFShadowMap;
+    Game.scene.traverse(function (o) { if (o.material) o.material.needsUpdate = true; });
+  });
+
+  // Item 53 / 104: remove the blur on the hidden start overlay, and promote the joystick knob to its own layer
+  var st = document.createElement('style');
+  st.textContent = '.menu{backdrop-filter:none !important;-webkit-backdrop-filter:none !important}' +
+                   '#joyKnob{will-change:transform}' +
+                   '#pauseTab{backdrop-filter:none !important}';
+  document.head.appendChild(st);
+})();
+</script>
+<script>
+(function () {
+  var box = document.createElement('div');
+  box.id = 'fpsBox';
+  box.style.cssText = 'position:fixed;top:12px;right:12px;z-index:25;display:none;padding:8px 10px;background:rgba(10,12,16,.8);border:1px solid rgba(255,184,77,.35);font:12px Consolas,monospace;color:#e8edf3;pointer-events:none;min-width:160px;line-height:1.5';
+  box.innerHTML = '<canvas id="fpsGraph" width="240" height="60" style="display:block;width:240px;height:60px;margin-bottom:6px"></canvas><div id="fpsTxt"></div>';
+  document.body.appendChild(box);
+  var cv = document.getElementById('fpsGraph'), cx = cv.getContext('2d'), txt = document.getElementById('fpsTxt');
+
+  var N = 240;                          // graph bars
+  var W = 3000;                         // stats window: about 50 s at 60 fps, enough for 0.1% lows
+  var ring = new Float32Array(W), rp = 0, rn = 0;   // frame intervals in ms
+  var graphBuf = new Float32Array(N), gp = 0;
+  var sorted = new Float32Array(W);
+  var last = 0, lastText = 0, on = false;
+  var origLoop = Game.loop;
+
+  function sample(ft) {
+    ring[rp] = ft; rp = (rp + 1) % W; if (rn < W) rn++;
+    graphBuf[gp] = ft; gp = (gp + 1) % N;
+  }
+
+  function drawGraph() {
+    cx.fillStyle = '#0a0c10';
+    cx.fillRect(0, 0, 240, 60);
+    // 60 fps reference line on a 0 to 50 ms scale
+    cx.fillStyle = 'rgba(255,255,255,.25)';
+    cx.fillRect(0, 60 - (16.67 / 50) * 60, 240, 1);
+    var bw = 240 / N;
+    for (var i = 0; i < N; i++) {
+      var ft = graphBuf[(gp + i) % N];   // oldest first
+      if (!ft) continue;
+      var h = Math.min(1, ft / 50) * 60;
+      cx.fillStyle = ft <= 16.7 ? '#639922' : ft <= 33.4 ? '#BA7517' : '#E24B4A';
+      cx.fillRect(i * bw, 60 - h, Math.max(1, bw - 0.5), h);
+    }
+  }
+
+  function stats() {
+    var n = rn;
+    if (!n) return null;
+    var sum = 0, mx = 0, mn = Infinity, i;
+    for (i = 0; i < n; i++) { var v = ring[i]; sum += v; if (v > mx) mx = v; if (v < mn) mn = v; }
+    for (i = 0; i < n; i++) sorted[i] = ring[i];
+    var s = sorted.subarray(0, n);
+    s.sort();                           // ascending, so the largest frame times are at the end
+    function low(p) {
+      var k = Math.max(1, Math.ceil(n * p)), t = 0;
+      for (var j = n - k; j < n; j++) t += s[j];
+      return 1000 / (t / k);
+    }
+    return { avg: 1000 * n / sum, max: 1000 / mn, min: 1000 / mx, l1: low(0.01), l01: low(0.001), cur: 0 };
+  }
+
+  function showText() {
+    var st = stats();
+    if (!st) return;
+    var m = Math.min(10, rn), c = 0;
+    for (var i = 1; i <= m; i++) c += ring[(rp - i + W) % W];
+    st.cur = 1000 / (c / m);
+    txt.innerHTML = 'CURRENT ' + st.cur.toFixed(0) + '<br>AVG ' + st.avg.toFixed(0) +
+      ' · MAX ' + st.max.toFixed(0) + '<br>MIN ' + st.min.toFixed(0) +
+      '<br>1% LOW ' + st.l1.toFixed(0) + '<br>0.1% LOW ' + st.l01.toFixed(0);
+  }
+
+  // Replaces Game.loop only while the counter is on. Off means the original loop runs with no extra work.
+  function fpsLoop() {
+    var now = performance.now();
+    if (last && !(window.Settings && Settings.paused)) sample(now - last);
+    last = now;
+    drawGraph();
+    if (now - lastText > 250) { lastText = now; showText(); }
+    return origLoop.call(this);
+  }
+
+  window.setFpsCounter = function (v) {
+    on = !!v;
+    box.style.display = on ? 'block' : 'none';
+    if (on) {
+      last = 0; rn = 0; rp = 0; gp = 0;
+      graphBuf.fill(0);
+      Game.loop = fpsLoop;
+    } else {
+      Game.loop = origLoop;
+    }
+  };
+
+  window.addEventListener('load', function () {
+    if (window.Settings && Settings.fpsCounter) setFpsCounter(true);
+  });
+})();
+</script>
+<script>
+window.addEventListener('load', function () {
+  // Bakes a mesh's geometry into the space of its parent, so several meshes can become one
+  function bake(m) {
+    m.updateMatrix();
+    var g = m.geometry.clone();
+    g.applyMatrix4(m.matrix);
+    return g;
+  }
+
+  // Joins indexed geometries (position, normal, uv and index) into one BufferGeometry
+  function combine(list) {
+    var pc = 0, ic = 0, i;
+    for (i = 0; i < list.length; i++) {
+      pc += list[i].attributes.position.count;
+      ic += list[i].index.count;
+    }
+    var pos = new Float32Array(pc * 3), nor = new Float32Array(pc * 3);
+    var uv = new Float32Array(pc * 2), idx = new Uint32Array(ic);
+    var po = 0, io = 0;
+    for (i = 0; i < list.length; i++) {
+      var g = list[i];
+      var P = g.attributes.position.array, N = g.attributes.normal.array;
+      var U = g.attributes.uv.array, I = g.index.array;
+      pos.set(P, po * 3); nor.set(N, po * 3); uv.set(U, po * 2);
+      for (var k = 0; k < I.length; k++) idx[io + k] = I[k] + po;
+      po += P.length / 3; io += I.length;
+    }
+    var out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    out.computeBoundingSphere();
+    out.computeBoundingBox();
+    return out;
+  }
+
+  // Removes every item in the set from an array, in place
+  function removeFrom(arr, set) {
+    for (var i = arr.length - 1; i >= 0; i--) if (set.has(arr[i])) arr.splice(i, 1);
+  }
+
+  // 1. Human bodies: each body keeps one mesh per material (instead of many small ones).
+  // Every part of a body shares the same part and limb name, so hit detection is unchanged.
+  Humans.list.forEach(function (H) {
+    H.bodies.forEach(function (b) {
+      var g = b.group;
+      if (!g) return;
+      var groups = {}, order = [], old = [];
+      g.children.slice().forEach(function (c) {
+        if (!c.isMesh || !c.userData || c.userData.target !== H || !c.geometry.index) return;
+        var key = c.material.uuid;
+        if (!groups[key]) {
+          groups[key] = { mat: c.material, geos: [], cast: false, part: c.userData.part, limb: c.userData.limb };
+          order.push(key);
+        }
+        groups[key].geos.push(bake(c));
+        groups[key].cast = groups[key].cast || c.castShadow;
+        old.push(c);
+      });
+      if (!old.length) return;
+
+      var oldSet = new Set(old);
+      removeFrom(H.parts, oldSet);
+      removeFrom(GameMap.solids, oldSet);
+      old.forEach(function (c) { g.remove(c); c.geometry.dispose(); });
+
+      order.forEach(function (key) {
+        var G = groups[key];
+        var m = new THREE.Mesh(combine(G.geos), G.mat);
+        m.castShadow = G.cast;
+        m.userData.target = H;
+        m.userData.part = G.part;
+        m.userData.limb = G.limb;
+        g.add(m);
+        H.parts.push(m);
+        GameMap.solids.push(m);
+      });
+    });
+  });
+
+  // 2. Static map: meshes with the same colour and finish become one mesh.
+  var statics = GameMap.solids.filter(function (m) {
+    return m.isMesh && !m.userData.target && !m.userData.decal && m.geometry.index;
+  });
+  var sg = {}, sorder = [];
+  statics.forEach(function (m) {
+    var mat = m.material;
+    var key = mat.color.getHex() + ':' + mat.roughness + ':' + mat.metalness;
+    if (!sg[key]) { sg[key] = { mat: mat, geos: [], cast: false }; sorder.push(key); }
+    sg[key].geos.push(bake(m));
+    sg[key].cast = sg[key].cast || m.castShadow;
+  });
+  var sset = new Set(statics);
+  removeFrom(GameMap.solids, sset);
+  statics.forEach(function (m) {
+    if (m.parent) m.parent.remove(m);
+    m.geometry.dispose();
+  });
+  sorder.forEach(function (key) {
+    var S = sg[key];
+    var m = new THREE.Mesh(combine(S.geos), S.mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.matrixAutoUpdate = false;
+    Game.scene.add(m);
+    GameMap.solids.push(m);
+  });
+});
+</script>
+<script>
+(function () {
+  var ord = [], ordSrc = null;
+
+  // Replaces the global collectContacts. Same contacts as before, but body pairs are found with a sweep along X.
+  collectContacts = function () {
+    var out = [], bodies = PHYS.bodies, nb = bodies.length, G = PHYS.ground;
+    var boxes = GameMap.colliders;
+    var i, j, b, s, r;
+
+    // World-space spheres, once per body per substep
+    for (i = 0; i < nb; i++) {
+      b = bodies[i];
+      var ws = b.wsp;
+      ws.length = b.sp.length;
+      for (s = 0; s < b.sp.length; s++) {
+        var sp = b.sp[s], wc = Vx.add(b.x, Qt.rot(b.q, [sp[0], sp[1], sp[2]]));
+        ws[s] = [wc[0], wc[1], wc[2], sp[3]];
+      }
+    }
+
+    // Floor and static boxes (unchanged from before)
+    for (i = 0; i < nb; i++) {
+      b = bodies[i];
+      for (s = 0; s < b.wsp.length; s++) {
+        var c = b.wsp[s];
+        r = c[3];
+        if (c[1] - r < 0) {
+          var cf = makeContact(G, b, [0, 1, 0], [c[0], 0, c[2]], r - c[1]);
+          var tf = tangentsOf(cf.n); cf.t1 = tf[0]; cf.t2 = tf[1];
+          out.push(cf);
+        }
+        for (var q = 0; q < boxes.length; q++) {
+          var bx = boxes[q];
+          if (bx.human) continue;
+          var px = Math.max(bx.min.x, Math.min(c[0], bx.max.x));
+          var py = Math.max(0, Math.min(c[1], bx.top));
+          var pz = Math.max(bx.min.z, Math.min(c[2], bx.max.z));
+          var dv = [c[0] - px, c[1] - py, c[2] - pz];
+          var dl = Vx.len(dv);
+          var nrm, depth, pt;
+          if (dl > 1e-9) {
+            if (dl >= r) continue;
+            nrm = Vx.mul(dv, 1 / dl); depth = r - dl; pt = [px, py, pz];
+          } else {
+            var faces = [
+              [c[0] - bx.min.x, [-1, 0, 0]], [bx.max.x - c[0], [1, 0, 0]],
+              [c[1], [0, -1, 0]], [bx.top - c[1], [0, 1, 0]],
+              [c[2] - bx.min.z, [0, 0, -1]], [bx.max.z - c[2], [0, 0, 1]]
+            ];
+            var best = faces[0];
+            for (var f = 1; f < faces.length; f++) if (faces[f][0] < best[0]) best = faces[f];
+            nrm = best[1]; depth = best[0] + r; pt = [c[0], c[1], c[2]];
+          }
+          var cb = makeContact(G, b, nrm, pt, depth);
+          var tg = tangentsOf(nrm); cb.t1 = tg[0]; cb.t2 = tg[1];
+          out.push(cb);
+        }
+      }
+    }
+
+    // Broadphase: keep a sorted order of bodies by their left edge (centre X minus radius).
+    // The order is kept between calls, so re-sorting nearly sorted data is cheap (insertion sort).
+    if (ordSrc !== bodies) { ordSrc = bodies; ord = bodies.slice(); }
+    for (i = 1; i < nb; i++) {
+      var v = ord[i], kv = v.x[0] - v.br;
+      j = i - 1;
+      while (j >= 0 && ord[j].x[0] - ord[j].br > kv) { ord[j + 1] = ord[j]; j--; }
+      ord[j + 1] = v;
+    }
+
+    // Sweep: only pairs whose X extents overlap are tested
+    for (i = 0; i < nb; i++) {
+      var A = ord[i], amax = A.x[0] + A.br;
+      for (j = i + 1; j < nb; j++) {
+        var B = ord[j];
+        if (B.x[0] - B.br > amax) break;
+        if (A.human === B.human && A.ex[B.id]) continue;
+        if (Vx.len(Vx.sub(A.x, B.x)) > A.br + B.br) continue;
+        for (var sa = 0; sa < A.wsp.length; sa++) {
+          var pa = A.wsp[sa];
+          for (var sb = 0; sb < B.wsp.length; sb++) {
+            var pb = B.wsp[sb];
+            var dx = pb[0] - pa[0], dy = pb[1] - pa[1], dz = pb[2] - pa[2];
+            var rr = pa[3] + pb[3];
+            var d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 >= rr * rr || d2 < 1e-12) continue;
+            var dist = Math.sqrt(d2);
+            var nn = [dx / dist, dy / dist, dz / dist];
+            var cc = makeContact(A, B, nn, [pa[0] + nn[0] * pa[3], pa[1] + nn[1] * pa[3], pa[2] + nn[2] * pa[3]], rr - dist);
+            var tt = tangentsOf(nn); cc.t1 = tt[0]; cc.t2 = tt[1];
+            out.push(cc);
+          }
+        }
+      }
+    }
+    return out;
+  };
+})();
+</script>
+<script>
+(function () {
+  var lastF = '', lastW = '', lastM = '', lastL = '', lastH = null;
+  Game.updateTimeHUD = function () {
+    var slowAmt = Math.max(0, Math.min(1, (1 - this.ts) / 0.78));
+    var g = slowAmt * 0.5;
+    var f = g > 0.003 ? 'grayscale(' + g.toFixed(3) + ')' : 'none';
+    if (f !== lastF) { lastF = f; this.canvas.style.filter = f; }
+
+    var show = !!(this.slowOn || this.ts < 0.98);
+    if (show !== lastH) { lastH = show; this.el.timeBar.classList.toggle('hidden', !show); }
+
+    var wd = (slowAmt * 100).toFixed(1) + '%';
+    if (wd !== lastW) { lastW = wd; this.el.tFill.style.width = wd; }
+
+    var m = this.ts.toFixed(2) + 'x';
+    if (m !== lastM) { lastM = m; this.el.tMult.textContent = m; }
+
+    var l = this.slowOn ? 'SLOW-MO' : 'TIME';
+    if (l !== lastL) { lastL = l; this.el.tLabel.textContent = l; }
+  };
+})();
+</script>
+<script>
+(function () {
+  // Item 60: droplet removal swaps the oldest entry with the last one, instead of shifting the whole array.
+  // This runs before the existing spawnDroplet wrapper, so the blood cap check still applies.
+  var _prevSD = Decals.spawnDroplet;
+  Decals.spawnDroplet = function () {
+    var list = this.droplets;
+    if (list.length > 2500) {
+      var old = list[0], last = list.length - 1;
+      list[0] = list[last];
+      list.length = last;
+      if (old.mesh.parent) old.mesh.parent.remove(old.mesh);
+    }
+    return _prevSD.apply(this, arguments);
+  };
+
+  // Item 96: cap bullets in flight, so a burst can't grow the list without limit
+  var _fb = Effects.fireBullet;
+  Effects.fireBullet = function () {
+    if (this.bullets.length >= 200) this.bullets.shift();
+    return _fb.apply(this, arguments);
+  };
+
+  // Item 76: only write a body's transform to its mesh group when the physics pose has changed
+  Humans.syncVisuals = function (H) {
+    for (var i = 0; i < H.bodies.length; i++) {
+      var b = H.bodies[i];
+      var c = b._sc || (b._sc = [NaN, NaN, NaN, NaN, NaN, NaN, NaN]);
+      if (b.x[0] === c[0] && b.x[1] === c[1] && b.x[2] === c[2] &&
+          b.q[0] === c[3] && b.q[1] === c[4] && b.q[2] === c[5] && b.q[3] === c[6]) continue;
+      c[0] = b.x[0]; c[1] = b.x[1]; c[2] = b.x[2];
+      c[3] = b.q[0]; c[4] = b.q[1]; c[5] = b.q[2]; c[6] = b.q[3];
+      b.group.position.set(b.x[0], b.x[1], b.x[2]);
+      b.group.quaternion.set(b.q[1], b.q[2], b.q[3], b.q[0]);
+    }
+  };
+})();
+</script>
+<script>
+// Item 106: release the screen wake lock while paused, and request it again on resume.
+(function () {
+  var sentinel = null;
+  window._wlRequest = function () {
+    try {
+      if (navigator.wakeLock) {
+        navigator.wakeLock.request('screen').then(function (s) { sentinel = s; }).catch(function () {});
+      }
+    } catch (e) {}
+  };
+  var _start = Game.startTouchSession;
+  Game.startTouchSession = function () {
+    _start.call(this);
+    window._wlRequest();
+  };
+  function releaseLock() {
+    if (sentinel) { sentinel.release().catch(function () {}); sentinel = null; }
+  }
+  var pm = document.getElementById('pauseMenu');
+  new MutationObserver(function () {
+    if (!Game.started) return;
+    if (pm.classList.contains('on')) releaseLock();
+    else window._wlRequest();
+  }).observe(pm, { attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && Game.started && !pm.classList.contains('on') && !sentinel) {
+      window._wlRequest();
+    }
+  });
+})();
+</script>
+
+<script>
+// Item 33 / 95 (part): every decal and pool used to create its own unit plane buffer, which is never freed.
+// All decals are scaled with mesh.scale, so they can share one unit plane. Only 1x1 planes are shared.
+(function () {
+  var _PG = THREE.PlaneGeometry;
+  var unit = null;
+  THREE.PlaneGeometry = function (w, h) {
+    if (w === 1 && h === 1 && arguments.length === 2) {
+      if (!unit) unit = new _PG(1, 1);
+      return unit;
+    }
+    return new _PG(w, h);
+  };
+  THREE.PlaneGeometry.prototype = _PG.prototype;
+})();
+</script>
+<script>
+// Items 62-63, 92, 61 (finish): Effects.update without per-frame clones or splice calls.
+// Entries are compacted in place. Tracers are pooled, as in the earlier change.
+Effects.update = function (dt) {
+  var G = this._G || (this._G = new THREE.Vector3(0, -9.8, 0));
+  var dirN = this._dN || (this._dN = new THREE.Vector3());
+  var i, n, w;
+
+  // Bullets
+  var bl = this.bullets;
+  w = 0;
+  for (i = 0, n = bl.length; i < n; i++) {
+    var b = bl[i];
+    b.prev.copy(b.pos);
+    b.vel.addScaledVector(G, dt * 0.35);
+    b.pos.addScaledVector(b.vel, dt);
+    var step = b.prev.distanceTo(b.pos);
+    b.traveled += step;
+    b.life -= dt;
+    dirN.copy(b.vel).normalize();
+    this.spawnTracer(b.pos, dirN, b.tracerLen);
+
+    var hitDone = false;
+    if (step > 0) {
+      this.raycaster.set(b.prev, dirN);
+      this.raycaster.far = step;
+      var hits = this.raycaster.intersectObjects(GameMap.solids, false);
+      if (hits.length) {
+        var h = hits[0];
+        var nrm = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dirN.clone().negate();
+        var tgt = h.object.userData.target;
+        if (tgt && this.onHit) {
+          this.onHit(tgt, h.object.userData.part, h.object, h.point, dirN, b.damage, b.weapon, nrm);
+        } else {
+          this.spawnSpark(h.point, nrm);
+          Decals.impact(h.object, h.point, nrm, dirN, b.weapon);
+        }
+        hitDone = true;
+      }
+    }
+    if (!(hitDone || b.life <= 0 || b.traveled >= b.maxRange || b.pos.y < 0)) bl[w++] = b;
+  }
+  bl.length = w;
+
+  // Tracers: finished ones go back to the pool
+  var tl = this.tracers;
+  w = 0;
+  for (i = 0, n = tl.length; i < n; i++) {
+    var t = tl[i];
+    t.life -= dt;
+    t.obj.material.opacity = Math.max(0, t.life / t.max) * 0.95;
+    if (t.life <= 0) {
+      t.obj.visible = false;
+      (this._tPool = this._tPool || []).push(t.obj);
+    } else {
+      tl[w++] = t;
+    }
+  }
+  tl.length = w;
+
+  // Shells
+  var sh = this.shells;
+  w = 0;
+  for (i = 0, n = sh.length; i < n; i++) {
+    var s = sh[i];
+    s.vel.addScaledVector(G, dt);
+    s.mesh.position.addScaledVector(s.vel, dt);
+    s.mesh.rotation.x += s.spin.x * dt;
+    s.mesh.rotation.y += s.spin.y * dt;
+    s.mesh.rotation.z += s.spin.z * dt;
+    if (s.mesh.position.y < 0.02) {
+      s.mesh.position.y = 0.02;
+      s.vel.y = Math.abs(s.vel.y) * 0.35;
+      s.vel.x *= 0.6; s.vel.z *= 0.6;
+      s.spin.multiplyScalar(0.6);
+      s.bounces++;
+      if (s.bounces > 3 || s.vel.y < 0.2) {
+        s.vel.set(0, 0, 0); s.spin.set(0, 0, 0);
+        s.mesh.rotation.x = 0; s.mesh.rotation.z = 0;
+      }
+    }
+    s.life -= dt;
+    if (s.life < 0) this.scene.remove(s.mesh);
+    else sh[w++] = s;
+  }
+  sh.length = w;
+
+  // Smoke
+  var sm_ = this.smokes;
+  w = 0;
+  for (i = 0, n = sm_.length; i < n; i++) {
+    var sm = sm_[i];
+    sm.age += dt;
+    sm.vel.multiplyScalar(Math.exp(-dt * 2.5));
+    sm.sp.position.addScaledVector(sm.vel, dt);
+    var q = sm.age / sm.life;
+    sm.sp.scale.setScalar(sm.s0 + q * 0.22);
+    sm.sp.material.opacity = Math.max(0, 1 - q) * 0.5;
+    if (q >= 1) {
+      this.scene.remove(sm.sp);
+      sm.sp.material.dispose();
+    } else {
+      sm_[w++] = sm;
+    }
+  }
+  sm_.length = w;
+
+  // Sparks
+  var sp_ = this.sparks;
+  w = 0;
+  for (i = 0, n = sp_.length; i < n; i++) {
+    var sp = sp_[i];
+    sp.vel.addScaledVector(G, dt);
+    sp.mesh.position.addScaledVector(sp.vel, dt);
+    sp.life -= dt;
+    sp.mesh.scale.setScalar(Math.max(0.1, sp.life / 0.25));
+    if (sp.life <= 0) this.scene.remove(sp.mesh);
+    else sp_[w++] = sp;
+  }
+  sp_.length = w;
+};
+</script>
+<script>
+(function () {
+  // Item 5: fewer solver iterations (10 to 8). Slightly looser joints, much less work per substep.
+  PHYS.ITER = 8;
+
+  // Item 3: sleeping corpses. Once every human is dead, rigor has set, and nothing is moving, the physics step is skipped.
+  // Any hit, dismemberment, grab or respawn wakes the affected human.
+  function wake(H) { if (H) { H.sleeping = false; H.sleepT = 0; } }
+  var _hit = Humans.hit;
+  Humans.hit = function (H) { wake(H); return _hit.apply(this, arguments); };
+  var _dis = Humans.dismember;
+  Humans.dismember = function (H) { wake(H); return _dis.apply(this, arguments); };
+  var _res = Humans.respawn;
+  Humans.respawn = function (H) { wake(H); return _res.apply(this, arguments); };
+  var _grab = Ragdoll.beginGrab;
+  Ragdoll.beginGrab = function (H) { wake(H); return _grab.apply(this, arguments); };
+
+  var _stepRagdoll = Ragdoll.step;
+  Ragdoll.step = function (dt) {
+    var allAsleep = Humans.list.length > 0;
+    for (var i = 0; i < Humans.list.length; i++) {
+      if (!(Humans.list[i].dead && Humans.list[i].sleeping)) { allAsleep = false; break; }
+    }
+    if (allAsleep) return;
+    return _stepRagdoll.call(this, dt);
+  };
+
+  // Sleep detection runs once per frame, on the dead humans only
+  var _hu = Humans.update;
+  Humans.update = function (dt) {
+    var r = _hu.apply(this, arguments);
+    for (var i = 0; i < Humans.list.length; i++) {
+      var H = Humans.list[i];
+      if (!H.dead || H.sleeping || H.deadT < 7 || (H.twitch && H.twitch.t < 1.3) || H.grabInfo) continue;
+      var still = true;
+      for (var b = 0; b < H.bodies.length && still; b++) {
+        var bd = H.bodies[b];
+        var sp = Math.abs(bd.v[0]) + Math.abs(bd.v[1]) + Math.abs(bd.v[2]);
+        var spin = Math.abs(bd.w[0]) + Math.abs(bd.w[1]) + Math.abs(bd.w[2]);
+        if (sp > 0.02 || spin > 0.05) still = false;
+      }
+      H.sleepT = still ? (H.sleepT || 0) + dt : 0;
+      if (H.sleepT > 0.6) H.sleeping = true;
+    }
+    return r;
+  };
+
+  // Item 38: distant humans use a cheaper Lambert material. Checked every 30 frames.
+  var lamCache = {};
+  function lamFor(m) {
+    var k = m.uuid;
+    if (!lamCache[k]) lamCache[k] = new THREE.MeshLambertMaterial({ color: m.color.getHex(), map: m.map || null });
+    return lamCache[k];
+  }
+  var lodF = 0;
+  window.addEventListener('load', function () {
+    var _rr = Game.renderer.render;
+    var sun = null;
+    Game.scene.traverse(function (o) { if (o.isDirectionalLight && o.castShadow && !sun) sun = o; });
+
+    Game.renderer.render = function (scene, cam) {
+      var P = Player;
+      if (!(window.Settings && Settings.paused)) {
+        // Item 38: level of detail for humans
+        lodF++;
+        if (lodF % 30 === 0) {
+          for (var i = 0; i < Humans.list.length; i++) {
+            var H = Humans.list[i];
+            var pel = H.byName.pelvis.x;
+            var far = Math.hypot(pel[0] - P.pos.x, pel[2] - P.pos.z) > 25;
+            for (var p = 0; p < H.parts.length; p++) {
+              var m = H.parts[p];
+              if (far && !m.userData._lod && m.material.isMeshStandardMaterial) {
+                m.userData._std = m.material; m.userData._lod = true; m.material = lamFor(m.material);
+              } else if (!far && m.userData._lod) {
+                m.material = m.userData._std; m.userData._lod = false;
+              }
+            }
+          }
+        }
+
+        // Item 44: shadow camera follows the player, so a tighter frustum still covers the area around you
+        if (sun) {
+          sun.position.set(P.pos.x + 40, 60, P.pos.z + 20);
+          sun.target.position.set(P.pos.x, 0, P.pos.z);
+          sun.target.updateMatrixWorld();
+          sun.updateMatrixWorld();
+        }
+      }
+      return _rr.call(this, scene, cam);
+    };
+
+    if (sun) {
+      var sc = sun.shadow.camera;
+      sc.left = -40; sc.right = 40; sc.top = 40; sc.bottom = -40; sc.far = 160;
+      sc.updateProjectionMatrix();
+    }
+  });
+
+  // Item 58: impacts use two decals instead of three (the hole overlay is dropped).
+  Decals.impact = function (obj, point, normal, dir, weapon) {
+    var size = weapon.pellets > 1 ? 0.05 : 0.07;
+    this.addDecal(obj, point, normal, this.tex.scorch, size * 2.6, { opacity: 0.6 });
+    this.addDecal(obj, point, normal, this.tex.core, size, { opacity: 1 });
+  };
+})();
+</script>
+<script>
+(function () {
+  var _qD = [1,0,0,0], _qc = [1,0,0,0], _qe = [1,0,0,0], _sv = [0,0,0];
+  var _wr = [0,0,0], _tau = [0,0,0], _ti = [0,0,0], _ta = [0,0,0];
+
+  // Quaternion product a * b into o (same order as Qt.mul)
+  function mulS(a, b, o) {
+    var a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
+    var b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+    o[0] = a0 * b0 - a1 * b1 - a2 * b2 - a3 * b3;
+    o[1] = a0 * b1 + a1 * b0 + a2 * b3 - a3 * b2;
+    o[2] = a0 * b2 - a1 * b3 + a2 * b0 + a3 * b1;
+    o[3] = a0 * b3 + a1 * b2 - a2 * b1 + a3 * b0;
+    return o;
+  }
+
+  // Motor: drives body B toward the target orientation (relative to A, or world when A is null).
+  // Same maths as the original applyMotor, without allocating.
+  window.applyMotor = function (m, S, h) {
+    if (S <= 0) return;
+    var A = m.a, B = m.b;
+    var qD;
+    if (A) { mulS(A.q, m.target, _qD); qD = _qD; } else { qD = m.target; }
+
+    _qc[0] = B.q[0]; _qc[1] = -B.q[1]; _qc[2] = -B.q[2]; _qc[3] = -B.q[3];
+    mulS(qD, _qc, _qe);
+    if (_qe[0] < 0) { _qe[0] = -_qe[0]; _qe[1] = -_qe[1]; _qe[2] = -_qe[2]; _qe[3] = -_qe[3]; }
+
+    _sv[0] = _qe[1]; _sv[1] = _qe[2]; _sv[2] = _qe[3];
+    var s = Math.sqrt(_sv[0] * _sv[0] + _sv[1] * _sv[1] + _sv[2] * _sv[2]);
+    var ang = 2 * Math.atan2(s, _qe[0]);
+    var k = (s > 1e-9) ? (m.kp * ang) / s : 0;
+
+    if (A) { _wr[0] = B.w[0] - A.w[0]; _wr[1] = B.w[1] - A.w[1]; _wr[2] = B.w[2] - A.w[2]; }
+    else   { _wr[0] = B.w[0]; _wr[1] = B.w[1]; _wr[2] = B.w[2]; }
+
+    _tau[0] = _sv[0] * k - _wr[0] * m.kd;
+    _tau[1] = _sv[1] * k - _wr[1] * m.kd;
+    _tau[2] = _sv[2] * k - _wr[2] * m.kd;
+    _tau[0] *= S; _tau[1] *= S; _tau[2] *= S;
+
+    var tl = Math.sqrt(_tau[0] * _tau[0] + _tau[1] * _tau[1] + _tau[2] * _tau[2]);
+    if (tl > m.maxT) { var c = m.maxT / tl; _tau[0] *= c; _tau[1] *= c; _tau[2] *= c; }
+
+    _tau[0] *= h; _tau[1] *= h; _tau[2] *= h;
+    window.invIwS(B, _tau, _ti);
+    B.w[0] += _ti[0]; B.w[1] += _ti[1]; B.w[2] += _ti[2];
+    if (A) {
+      window.invIwS(A, _tau, _ta);
+      A.w[0] -= _ta[0]; A.w[1] -= _ta[1]; A.w[2] -= _ta[2];
+    }
+  };
+})();
+</script>
+<script>
+(function () {
+  var _qD = [1,0,0,0], _qc = [1,0,0,0], _qe = [1,0,0,0], _sv = [0,0,0];
+  var _wr = [0,0,0], _tau = [0,0,0], _ti = [0,0,0], _ta = [0,0,0];
+
+  // Quaternion product a * b into o (same order as Qt.mul)
+  function mulS(a, b, o) {
+    var a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
+    var b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+    o[0] = a0 * b0 - a1 * b1 - a2 * b2 - a3 * b3;
+    o[1] = a0 * b1 + a1 * b0 + a2 * b3 - a3 * b2;
+    o[2] = a0 * b2 - a1 * b3 + a2 * b0 + a3 * b1;
+    o[3] = a0 * b3 + a1 * b2 - a2 * b1 + a3 * b0;
+    return o;
+  }
+
+  // Motor: drives body B toward the target orientation (relative to A, or world when A is null).
+  // Same maths as the original applyMotor, without allocating.
+  window.applyMotor = function (m, S, h) {
+    if (S <= 0) return;
+    var A = m.a, B = m.b;
+    var qD;
+    if (A) { mulS(A.q, m.target, _qD); qD = _qD; } else { qD = m.target; }
+
+    _qc[0] = B.q[0]; _qc[1] = -B.q[1]; _qc[2] = -B.q[2]; _qc[3] = -B.q[3];
+    mulS(qD, _qc, _qe);
+    if (_qe[0] < 0) { _qe[0] = -_qe[0]; _qe[1] = -_qe[1]; _qe[2] = -_qe[2]; _qe[3] = -_qe[3]; }
+
+    _sv[0] = _qe[1]; _sv[1] = _qe[2]; _sv[2] = _qe[3];
+    var s = Math.sqrt(_sv[0] * _sv[0] + _sv[1] * _sv[1] + _sv[2] * _sv[2]);
+    var ang = 2 * Math.atan2(s, _qe[0]);
+    var k = (s > 1e-9) ? (m.kp * ang) / s : 0;
+
+    if (A) { _wr[0] = B.w[0] - A.w[0]; _wr[1] = B.w[1] - A.w[1]; _wr[2] = B.w[2] - A.w[2]; }
+    else   { _wr[0] = B.w[0]; _wr[1] = B.w[1]; _wr[2] = B.w[2]; }
+
+    _tau[0] = _sv[0] * k - _wr[0] * m.kd;
+    _tau[1] = _sv[1] * k - _wr[1] * m.kd;
+    _tau[2] = _sv[2] * k - _wr[2] * m.kd;
+    _tau[0] *= S; _tau[1] *= S; _tau[2] *= S;
+
+    var tl = Math.sqrt(_tau[0] * _tau[0] + _tau[1] * _tau[1] + _tau[2] * _tau[2]);
+    if (tl > m.maxT) { var c = m.maxT / tl; _tau[0] *= c; _tau[1] *= c; _tau[2] *= c; }
+
+    _tau[0] *= h; _tau[1] *= h; _tau[2] *= h;
+    window.invIwS(B, _tau, _ti);
+    B.w[0] += _ti[0]; B.w[1] += _ti[1]; B.w[2] += _ti[2];
+    if (A) {
+      window.invIwS(A, _tau, _ta);
+      A.w[0] -= _ta[0]; A.w[1] -= _ta[1]; A.w[2] -= _ta[2];
+    }
+  };
+})();
+</script>
+<script>
+(function () {
+  var T = [0, 0, 0];
+
+  // Rotate v by unit quaternion q into o, without allocating (same maths as Qt.rot)
+  function rotT(q, v, o) {
+    var ux = q[1], uy = q[2], uz = q[3], w = q[0];
+    var c1x = uy * v[2] - uz * v[1], c1y = uz * v[0] - ux * v[2], c1z = ux * v[1] - uy * v[0];
+    var c2x = uy * c1z - uz * c1y,   c2y = uz * c1x - ux * c1z,   c2z = ux * c1y - uy * c1x;
+    o[0] = v[0] + 2 * (w * c1x + c2x);
+    o[1] = v[1] + 2 * (w * c1y + c2y);
+    o[2] = v[2] + 2 * (w * c1z + c2z);
+    return o;
+  }
+
+  var ord = [], ordSrc = null;
+
+  // Same contacts as before, but world sphere positions are written into arrays that are reused every substep
+  window.collectContacts = function () {
+    var out = [], bodies = PHYS.bodies, nb = bodies.length, G = PHYS.ground;
+    var boxes = GameMap.colliders;
+    var i, j, b, s, r;
+
+    // World-space spheres: reuse one array per sphere for the life of the body
+    for (i = 0; i < nb; i++) {
+      b = bodies[i];
+      if (!b._wsa) {
+        b._wsa = [];
+        for (s = 0; s < b.sp.length; s++) b._wsa.push([0, 0, 0, 0]);
+        b.wsp = b._wsa;
+      }
+      for (s = 0; s < b.sp.length; s++) {
+        var sp = b.sp[s], w = b.wsp[s];
+        rotT(b.q, sp, T);
+        w[0] = b.x[0] + T[0]; w[1] = b.x[1] + T[1]; w[2] = b.x[2] + T[2]; w[3] = sp[3];
+      }
+    }
+
+    // Floor and static boxes
+    for (i = 0; i < nb; i++) {
+      b = bodies[i];
+      for (s = 0; s < b.wsp.length; s++) {
+        var c = b.wsp[s];
+        r = c[3];
+        if (c[1] - r < 0) {
+          var cf = makeContact(G, b, [0, 1, 0], [c[0], 0, c[2]], r - c[1]);
+          var tf = tangentsOf(cf.n); cf.t1 = tf[0]; cf.t2 = tf[1];
+          out.push(cf);
+        }
+        for (var q = 0; q < boxes.length; q++) {
+          var bx = boxes[q];
+          if (bx.human) continue;
+          var px = Math.max(bx.min.x, Math.min(c[0], bx.max.x));
+          var py = Math.max(0, Math.min(c[1], bx.top));
+          var pz = Math.max(bx.min.z, Math.min(c[2], bx.max.z));
+          var dx = c[0] - px, dy = c[1] - py, dz = c[2] - pz;
+          var dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          var nrm, depth, pt;
+          if (dl > 1e-9) {
+            if (dl >= r) continue;
+            nrm = [dx / dl, dy / dl, dz / dl]; depth = r - dl; pt = [px, py, pz];
+          } else {
+            var faces = [
+              [c[0] - bx.min.x, [-1, 0, 0]], [bx.max.x - c[0], [1, 0, 0]],
+              [c[1], [0, -1, 0]], [bx.top - c[1], [0, 1, 0]],
+              [c[2] - bx.min.z, [0, 0, -1]], [bx.max.z - c[2], [0, 0, 1]]
+            ];
+            var best = faces[0];
+            for (var f = 1; f < faces.length; f++) if (faces[f][0] < best[0]) best = faces[f];
+            nrm = best[1]; depth = best[0] + r; pt = [c[0], c[1], c[2]];
+          }
+          var cb = makeContact(G, b, nrm, pt, depth);
+          var tg = tangentsOf(nrm); cb.t1 = tg[0]; cb.t2 = tg[1];
+          out.push(cb);
+        }
+      }
+    }
+
+    // Broadphase: sorted by left edge, kept between calls (insertion sort is cheap on nearly sorted data)
+    if (ordSrc !== bodies) { ordSrc = bodies; ord = bodies.slice(); }
+    for (i = 1; i < nb; i++) {
+      var v = ord[i], kv = v.x[0] - v.br;
+      j = i - 1;
+      while (j >= 0 && ord[j].x[0] - ord[j].br > kv) { ord[j + 1] = ord[j]; j--; }
+      ord[j + 1] = v;
+    }
+
+    // Sphere against sphere, only for pairs whose X extents overlap
+    for (i = 0; i < nb; i++) {
+      var A = ord[i], amax = A.x[0] + A.br;
+      for (j = i + 1; j < nb; j++) {
+        var B = ord[j];
+        if (B.x[0] - B.br > amax) break;
+        if (A.human === B.human && A.ex[B.id]) continue;
+        var ex = A.x[0] - B.x[0], ey = A.x[1] - B.x[1], ez = A.x[2] - B.x[2];
+        var br = A.br + B.br;
+        if (ex * ex + ey * ey + ez * ez > br * br) continue;
+        for (var sa = 0; sa < A.wsp.length; sa++) {
+          var pa = A.wsp[sa];
+          for (var sb = 0; sb < B.wsp.length; sb++) {
+            var pb = B.wsp[sb];
+            var sx = pb[0] - pa[0], sy = pb[1] - pa[1], sz = pb[2] - pa[2];
+            var rr = pa[3] + pb[3];
+            var d2 = sx * sx + sy * sy + sz * sz;
+            if (d2 >= rr * rr || d2 < 1e-12) continue;
+            var dist = Math.sqrt(d2);
+            var nn = [sx / dist, sy / dist, sz / dist];
+            var cc = makeContact(A, B, nn,
+              [pa[0] + nn[0] * pa[3], pa[1] + nn[1] * pa[3], pa[2] + nn[2] * pa[3]], rr - dist);
+            var tt = tangentsOf(nn); cc.t1 = tt[0]; cc.t2 = tt[1];
+            out.push(cc);
+          }
+        }
+      }
+    }
+    return out;
+  };
+})();
+</script>
+<script>
+(function () {
+  // Item 33: decals with the same texture, colour and opacity share one material.
+  // Floor smears are excluded, because their fading changes their own material's opacity.
+  var _ad = Decals.addDecal;
+  var matCache = {};
+  Decals.addDecal = function (parent, p, n, tex, size, opts) {
+    var m = _ad.apply(this, arguments);
+    if (m && m.material && tex !== Decals.tex.drag) {
+      var key = tex.uuid + ':' + m.material.color.getHex() + ':' + m.material.opacity;
+      var shared = matCache[key];
+      if (!shared) {
+        matCache[key] = m.material;
+      } else if (shared !== m.material) {
+        m.material.dispose();
+        m.material = shared;
+      }
+    }
+    return m;
+  };
+})();
 </script>
 </body>
 </html>
