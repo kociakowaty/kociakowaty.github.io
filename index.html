@@ -184,6 +184,8 @@ var WEAPON_DEFS = {
     name: 'M9 PISTOL', slot: 1, color: 0x3a3f47, accent: 0xffb84d,
     magSize: 15, reserve: 60, fireInterval: 0.14, auto: false, reloadTime: 1.5,
     damage: 25, spread: 0.004, recoilKick: 0.035, recoilRise: 0.045, recoilRecover: 9,
+          headMult: 1.0,
+woundScale: 0.5,
     shellType: 'brass', pellets: 1, range: 200, bulletSpeed: 420, pickupColor: 0x4a90e2,
     model: 'pistol', camKick: 0.02, adsZoom: 0.55, hipSpread: 0.012, adsSpread: 0.002
   },
@@ -191,6 +193,7 @@ var WEAPON_DEFS = {
     name: 'AR-15 RIFLE', slot: 2, color: 0x2b2f35, accent: 0xff6a3d,
     magSize: 30, reserve: 120, fireInterval: 0.09, auto: true, reloadTime: 2.2,
     damage: 18, spread: 0.007, recoilKick: 0.028, recoilRise: 0.03, recoilRecover: 7,
+woundScale: 0.9,
     shellType: 'brass', pellets: 1, range: 300, bulletSpeed: 600, pickupColor: 0xe25a3a,
     model: 'rifle', camKick: 0.018, adsZoom: 0.6, hipSpread: 0.02, adsSpread: 0.003
   },
@@ -198,6 +201,7 @@ var WEAPON_DEFS = {
     name: 'PUMP SHOTGUN', slot: 3, color: 0x5a4a3a, accent: 0xffd166,
     magSize: 6, reserve: 24, fireInterval: 0.75, auto: false, reloadTime: 0.55, reloadPerShell: true,
     damage: 12, spread: 0.06, recoilKick: 0.07, recoilRise: 0.09, recoilRecover: 5,
+woundScale: 0.45,
     shellType: 'shell', pellets: 9, range: 60, bulletSpeed: 380, pickupColor: 0xffd166,
     model: 'shotgun', camKick: 0.045, adsZoom: 0.7, hipSpread: 0.05, adsSpread: 0.025
   },
@@ -205,6 +209,8 @@ var WEAPON_DEFS = {
     name: 'SMG-9', slot: 4, color: 0x1f2a24, accent: 0x3ddc84,
     magSize: 32, reserve: 160, fireInterval: 0.065, auto: true, reloadTime: 1.8,
     damage: 14, spread: 0.01, recoilKick: 0.018, recoilRise: 0.02, recoilRecover: 10,
+woundScale: 0.45,
+        headMult: 1.6,
     shellType: 'brass', pellets: 1, range: 150, bulletSpeed: 480, pickupColor: 0x3ddc84,
     model: 'smg', camKick: 0.012, adsZoom: 0.65, hipSpread: 0.018, adsSpread: 0.004
   }
@@ -1263,16 +1269,57 @@ var Decals = {
     return new THREE.CanvasTexture(c);
   },
 
-  makeWoundTex: function () {
+    makeWoundTex: function () {
     var c = this.canvas(128, 128), x = c.getContext('2d');
-    var g = x.createRadialGradient(64, 64, 0, 64, 64, 58);
-    g.addColorStop(0, 'rgba(20,0,0,1)');
-    g.addColorStop(0.35, 'rgba(70,4,4,0.97)');
-    g.addColorStop(0.7, 'rgba(120,12,12,0.7)');
-    g.addColorStop(1, 'rgba(120,12,12,0)');
-    x.fillStyle = g; x.beginPath(); x.arc(64, 64, 58, 0, Math.PI * 2); x.fill();
-    x.strokeStyle = 'rgba(60,20,40,0.6)'; x.lineWidth = 6;
-    x.beginPath(); x.arc(64, 64, 44, 0, Math.PI * 2); x.stroke();
+    x.clearRect(0, 0, 128, 128);
+
+    // Layered, irregular blobs: a dark rim that gets darker toward the centre
+    var layers = [
+      { r: 56, col: 'rgba(90,6,8,0.55)' },
+      { r: 42, col: 'rgba(70,4,6,0.8)' },
+      { r: 26, col: 'rgba(35,0,2,0.95)' },
+      { r: 12, col: 'rgba(10,0,0,1)' }
+    ];
+    for (var L = 0; L < layers.length; L++) {
+      x.fillStyle = layers[L].col;
+      x.beginPath();
+      var N = 36;
+      for (var i = 0; i <= N; i++) {
+        var a = (i / N) * Math.PI * 2;
+        var r = layers[L].r * (0.8 + Math.random() * 0.3);
+        var px = 64 + Math.cos(a) * r, py = 64 + Math.sin(a) * r;
+        if (i === 0) x.moveTo(px, py); else x.lineTo(px, py);
+      }
+      x.closePath(); x.fill();
+    }
+
+    // Torn streaks radiating outward
+    x.strokeStyle = 'rgba(60,4,6,0.6)';
+    for (var s = 0; s < 14; s++) {
+      var sa = Math.random() * Math.PI * 2;
+      x.lineWidth = 1 + Math.random() * 2;
+      x.beginPath();
+      x.moveTo(64 + Math.cos(sa) * 18, 64 + Math.sin(sa) * 18);
+      x.lineTo(64 + Math.cos(sa) * (36 + Math.random() * 20), 64 + Math.sin(sa) * (36 + Math.random() * 20));
+      x.stroke();
+    }
+
+    // Small speckles around the edge
+    for (var k = 0; k < 40; k++) {
+      var ka = Math.random() * Math.PI * 2, kd = 38 + Math.random() * 22;
+      x.fillStyle = 'rgba(70,6,8,' + (0.3 + Math.random() * 0.4) + ')';
+      x.fillRect(64 + Math.cos(ka) * kd, 64 + Math.sin(ka) * kd, 1 + Math.random() * 2, 1 + Math.random() * 2);
+    }
+
+    // Fade the outer edge so the shape has no hard border
+    x.globalCompositeOperation = 'destination-out';
+    var g = x.createRadialGradient(64, 64, 30, 64, 64, 64);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,1)');
+    x.fillStyle = g;
+    x.fillRect(0, 0, 128, 128);
+    x.globalCompositeOperation = 'source-over';
+
     return new THREE.CanvasTexture(c);
   },
 
@@ -1403,10 +1450,11 @@ var Decals = {
   },
 
   // Human wound: hole + red wound + droplet spray. NO smear here (smears come only from dragging).
-  wound: function (partMesh, point, normal, dir, dmg) {
-    var sizeW = 0.075 + dmg * 0.0012;
-    this.addDecal(partMesh, point, normal, this.tex.wound, sizeW, { opacity: 0.98 });
-    this.addDecal(partMesh, point, normal, this.tex.hole, sizeW * 0.55, { opacity: 0.9 });
+    wound: function (partMesh, point, normal, dir, dmg, weapon) {
+    var scale = (weapon && weapon.woundScale) || 1;
+    var sizeW = (0.075 + dmg * 0.0012) * scale;
+    var spin = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+    this.addDecal(partMesh, point, normal, this.tex.wound, sizeW, { opacity: 0.98, tangent: spin });
     this.spray(point, dir, 8 + Math.floor(dmg * 0.15), dmg);
   },
 
@@ -2081,7 +2129,7 @@ var BODY_LAYOUT = [
   { n: 'abdomen', c: [0, 1.18, 0],    s: { t: 'cap', L: 0.24, r: 0.14 }, m: 9 },
   { n: 'chest',   c: [0, 1.43, 0],    s: { t: 'cap', L: 0.26, r: 0.17 }, m: 19 },
   { n: 'neck',    c: [0, 1.61, 0],    s: { t: 'cap', L: 0.10, r: 0.05 }, m: 1.5 },
-  { n: 'head',    c: [0, 1.77, 0],    s: { t: 'sph', r: 0.11 }, m: 4.5 },
+  { n: 'head',    c: [0, 1.77, 0],    s: { t: 'box', s: [0.17, 0.2, 0.16], sp: [[0.045, -0.06, 0.04, 0.075], [-0.045, -0.06, 0.04, 0.075], [0.045, -0.06, -0.04, 0.075], [-0.045, -0.06, -0.04, 0.075], [0, 0.03, 0, 0.095]] }, m: 4.5 },
   { n: 'uaL', c: [0.21, 1.36, 0], s: { t: 'cap', L: 0.28, r: 0.05 }, m: 2.4, side: 'L' },
   { n: 'faL', c: [0.21, 1.095, 0], s: { t: 'cap', L: 0.25, r: 0.042 }, m: 1.3, side: 'L' },
   { n: 'hdL', c: [0.21, 0.88, 0], s: { t: 'cap', L: 0.18, r: 0.04 }, m: 0.5, side: 'L' },
@@ -2118,7 +2166,7 @@ var Humans = {
   mult: { head: 8.0, neck: 2.6, chest: 1.6, stomach: 1.3, pelvis: 1.2,
           upperArm: 0.7, forearm: 0.7, hand: 0.6, thigh: 0.8, shin: 0.8, foot: 0.6 },
   standColliderTop: 1.9,
-  HOLD_PARTS: { chest: 1, stomach: 1, upperArm: 1, forearm: 1, hand: 1, head: 1 },
+    HOLD_PARTS: { pelvis: 1, stomach: 1, chest: 1, neck: 1, head: 1, upperArm: 1, forearm: 1, hand: 1, thigh: 1 },
   LEG_PARTS: { thigh: 1, shin: 1, foot: 1 },
 
   build: function (scene) {
@@ -2185,6 +2233,9 @@ var Humans = {
     H.worldMotor = { a: null, b: pel, target: [1, 0, 0, 0], kp: Ip * 144, kd: 2 * 0.8 * Ip * 12, maxT: 300 };
 
     this.buildVisuals(H, shirtCol, pantsCol);
+    H.allBodies = H.bodies.slice();
+    H.allJoints = H.jointsAll.slice();
+    H.explodedAny = false;
 
     H.mass = 0;
     for (var m = 0; m < H.bodies.length; m++) H.mass += H.bodies[m].m;
@@ -2456,8 +2507,9 @@ var Humans = {
   // Returns 'kill' | 'dismember' | 'hit'
   hit: function (H, part, object, point, dir, dmg, weapon, normal) {
     this.wake(H);
-    var eff = dmg * (this.mult[part] || 1);
-    Decals.wound(object, point, normal, dir, eff);
+          var pm = (part === 'head' && weapon && weapon.headMult) ? weapon.headMult : (this.mult[part] || 1);
+    var eff = dmg * pm;
+        Decals.wound(object, point, normal, dir, eff, weapon);
     var result = 'hit';
     var limb = object.userData.limb;
     var B = limb && H.byName[limb];
@@ -2481,18 +2533,25 @@ var Humans = {
         var pel = H.byName.pelvis;
         applyImpulse(PHYS.ground, pel, [0, 0, 0], [0, 0, 0], Vx.mul(dv, 2));
       }
-      if (this.HOLD_PARTS[part] && !H.hold) {
-        var hands = [H.byName.hdL, H.byName.hdR], best = null, bd = Infinity;
-        for (var k = 0; k < 2; k++) {
-          if (H.cut[hands[k].name]) continue;
-          var dd = Vx.len(Vx.sub(hands[k].x, pt));
-          if (dd < bd) { bd = dd; best = hands[k]; }
+           // Hold the wound with a free hand. Up to two wounds at a time, one per hand.
+      var hs = H.holds || (H.holds = []);
+      if (this.HOLD_PARTS[part] && hs.length < 2) {
+        var bestHand = null, bestHd = Infinity;
+        var cands = ['hdL', 'hdR'];
+        for (var ci = 0; ci < cands.length; ci++) {
+          var hnd = H.byName[cands[ci]];
+          if (!hnd || hnd === B) continue;
+          var used = false;
+          for (var qi = 0; qi < hs.length; qi++) if (hs[qi].hand === hnd) used = true;
+          if (used) continue;
+          var hdist = Vx.len(Vx.sub(hnd.x, pt));
+          if (hdist < bestHd) { bestHd = hdist; bestHand = hnd; }
         }
-        if (best) H.hold = { hand: best, wound: H.wounds[H.wounds.length - 1], t: 2.5 };
+        if (bestHand && bestHd < 1.0) hs.push({ hand: bestHand, wound: H.wounds[H.wounds.length - 1], t: 3.5 });
       }
     }
 
-    if (H.limbHp[limb] <= 0 && !H.cut[limb]) {
+         if (H.limbHp[limb] <= 0 && !H.cut[limb]) {
       this.dismember(H, limb, point, dir);
       result = 'dismember';
     }
@@ -2524,49 +2583,106 @@ var Humans = {
     Decals.bodyPool(pel.x[0], pel.x[2], { x: dir.x, z: dir.z }, 4);
   },
 
-  // Cut a body free: remove its joint(s) to the rest of the body. Its own children stay with it.
-  dismember: function (H, limb, point, dir) {
+    restoreBodies: function (H) {
+    if (!H.explodedAny) return;
+    H.allBodies.forEach(function (b) {
+      if (b.solidMeshes) {
+        for (var i = 0; i < b.solidMeshes.length; i++) {
+          GameMap.solids.push(b.solidMeshes[i]);
+          H.parts.push(b.solidMeshes[i]);
+        }
+        b.solidMeshes = null;
+      }
+      if (b.group) b.group.visible = true;
+    });
+    H.bodies = H.allBodies.slice();
+    H.jointsAll = H.allJoints.slice();
+    H.byName = {};
+    H.bodies.forEach(function (b) { H.byName[b.name] = b; });
+    H.explodedAny = false;
+  },
+
+  explodeBody: function (H, B, P, dirV) {
+    var meshes = [];
+    B.group.traverse(function (c) { if (c.isMesh && c.userData.target === H) meshes.push(c); });
+    removeAll(GameMap.solids, meshes);
+    removeAll(H.parts, meshes);
+    B.solidMeshes = meshes;
+    B.group.visible = false;
+    delete H.byName[B.name];
+    var centre = new THREE.Vector3(B.x[0], B.x[1], B.x[2]);
+    Gibs.burst(centre, P, dirV, 6 + Math.floor(Math.random() * 5));
+  },
+
+      dismember: function (H, limb, point, dir) {
     this.wake(H);
     if (H.cut[limb]) return;
     H.cut[limb] = true;
-    var names = [limb];
-    if (limb === 'chest') names.push('uaL', 'uaR');
-    if (limb === 'pelvis') names = ['thL', 'thR'];
-    var removed = [];
-    var keep = [];
+
+    // Only the hit limb explodes. Pelvis is the root, so its thighs explode instead.
+    var names = limb === 'pelvis' ? ['thL', 'thR'] : [limb];
+    var goneSet = {}, gone = [];
+    for (var n = 0; n < names.length; n++) {
+      var B = H.byName[names[n]];
+      if (B && !goneSet[B.id]) { goneSet[B.id] = true; gone.push(B); }
+    }
+    if (!gone.length) return;
+
+    var pt = Vx.arr(point), dv = Vx.arr(dir);
+    var P = new THREE.Vector3(pt[0], pt[1], pt[2]);
+    var dirV = new THREE.Vector3(dv[0], dv[1], dv[2]);
+
+    // Joints touching an exploded body are removed. Bodies left attached to them stay whole and fall.
+    var keep = [], stumps = [];
     for (var i = 0; i < H.joints.length; i++) {
       var j = H.joints[i];
-      if (names.indexOf(j.b.name) >= 0) removed.push(j); else keep.push(j);
+      var aGone = !!goneSet[j.a.id], bGone = !!goneSet[j.b.id];
+      if (!aGone && !bGone) { keep.push(j); continue; }
+      if (aGone && !bGone) stumps.push({ b: j.b, lp: j.pb.slice() });
+      else if (bGone && !aGone) stumps.push({ b: j.a, lp: j.pa.slice() });
     }
     H.joints = keep;
-    var pt = Vx.arr(point), dv = Vx.arr(dir);
-    for (var r = 0; r < removed.length; r++) {
-      var rj = removed[r];
-      var jp = Vx.add(rj.b.x, Qt.rot(rj.b.q, rj.pb));
-      H.wounds.push({ b: rj.b, lp: rj.pb.slice(), ld: [0, -1, 0], arterial: true, phase: Math.random(), bleedT: 25, drip: 0 });
-      H.wounds.push({ b: rj.a, lp: rj.pa.slice(), ld: [0, 1, 0], arterial: true, phase: Math.random(), bleedT: 25, drip: 0 });
-      var out = Vx.norm(Vx.sub(rj.b.x, jp));
-      applyImpulse(PHYS.ground, rj.b, [0, 0, 0], [0, 0, 0], Vx.add(Vx.mul(out, 1.5), Vx.mul(dv, 0.8)));
-      H.cut[rj.b.name] = true;
-      var stack = [rj.b];
-      while (stack.length) {
-        var cur = stack.pop();
-        if (cur.free) continue;
-        cur.free = true;
-        for (var jj = 0; jj < H.joints.length; jj++) {
-          var jk = H.joints[jj];
-          if (jk.a === cur) stack.push(jk.b);
-          else if (jk.b === cur) stack.push(jk.a);
-        }
-      }
+    H.jointsAll = H.jointsAll.filter(function (j) { return !goneSet[j.a.id] && !goneSet[j.b.id]; });
+    H.bodies = H.bodies.filter(function (b) { return !goneSet[b.id]; });
+    H.wounds = H.wounds.filter(function (w) { return !goneSet[w.b.id]; });
+    if (H.grabInfo && goneSet[H.grabInfo.body.id]) H.grabInfo = null;
+    if (H.hold && goneSet[H.hold.hand.id]) H.hold = null;
+
+    // Explode each removed body
+    for (var g = 0; g < gone.length; g++) {
+      H.cut[gone[g].name] = true;
+      this.explodeBody(H, gone[g], P, dirV);
     }
-    Decals.spray(new THREE.Vector3(pt[0], pt[1], pt[2]), new THREE.Vector3(dv[0], dv[1], dv[2]), 40, 60);
+
+    // Stumps on the bodies left behind keep bleeding
+    for (var s = 0; s < stumps.length; s++) {
+      H.wounds.push({ b: stumps[s].b, lp: stumps[s].lp, ld: [0, 1, 0], arterial: true, phase: Math.random(), bleedT: 25, drip: 0 });
+    }
+
+    // Blood burst
+    Decals.spray(P, dirV, 40, 60);
     for (var d = 0; d < 60; d++) {
       var v = Vx.norm([Math.random() - 0.5, Math.random() * 0.6 + 0.2, Math.random() - 0.5]);
       var sc = 1.5 + Math.random() * 4.5;
-      Decals.spawnDroplet(new THREE.Vector3(pt[0], pt[1], pt[2]), new THREE.Vector3(v[0] * sc, v[1] * sc, v[2] * sc), 1);
+      Decals.spawnDroplet(P.clone(), new THREE.Vector3(v[0] * sc, v[1] * sc, v[2] * sc), 1);
     }
+
     if (limb === 'chest' || limb === 'abdomen' || limb === 'neck' || limb === 'head' || limb === 'pelvis') H.vitalCut = true;
+    H.explodedAny = true;
+        // Any body no longer connected to the pelvis is detached and falls under full gravity
+    var reach = {}, queue = [H.byName.pelvis], qi = 0;
+    reach[H.byName.pelvis.id] = true;
+    while (qi < queue.length) {
+      var cur = queue[qi++];
+      for (var m = 0; m < H.joints.length; m++) {
+        var jm = H.joints[m], nxt = null;
+        if (jm.a === cur) nxt = jm.b; else if (jm.b === cur) nxt = jm.a;
+        if (nxt && !reach[nxt.id]) { reach[nxt.id] = true; queue.push(nxt); }
+      }
+    }
+    for (var bi = 0; bi < H.bodies.length; bi++) H.bodies[bi].detached = !reach[H.bodies[bi].id];
+    if (H.hold && (H.hold.hand.detached || H.hold.wound.b.detached)) H.hold = null;
+
     rebuildAdjacency(H);
     rebuildWorld();
   },
@@ -2585,6 +2701,7 @@ var Humans = {
   },
 
   respawn: function (H) {
+    Humans.restoreBodies(H);
     H.dead = false; H.rag = null; H.deadT = 0; H.hp = 100; H.downed = false; H.vitalCut = false;
     H.hold = null; H.twitch = null; H.stagger = 0; H.grabInfo = null;
     H.wounds = []; H.cut = {};
@@ -2594,6 +2711,7 @@ var Humans = {
     for (var i = 0; i < H.bodies.length; i++) {
       var b = H.bodies[i];
       b.free = false;
+      b.detached = false;
       b.x = b.home.slice(); b.q = [1, 0, 0, 0]; b.v = [0, 0, 0]; b.w = [0, 0, 0];
     }
     for (var j = 0; j < H.joints.length; j++) H.joints[j].target = [1, 0, 0, 0];
@@ -2693,9 +2811,11 @@ var Ragdoll = {
     for (var s = 0; s < sub; s++) {
       for (var i = 0; i < Humans.list.length; i++) applyHumanForces(Humans.list[i], h);
       var bodies = PHYS.bodies, n = bodies.length;
-      for (var b = 0; b < n; b++) {
-        var hb = bodies[b].human;
-        bodies[b].v[1] -= PHYS.G * h * (hb.dead || bodies[b].free ? 1 : 1 - hb.ropeS);
+            for (var b = 0; b < n; b++) {
+        var bd = bodies[b], hb = bd.human;
+        var fullG = hb.dead || bd.free || bd.detached;
+               var cancel = (hb.gravCancel == null) ? (1 - hb.ropeS) : hb.gravCancel;
+        bd.v[1] -= PHYS.G * h * (fullG ? 1 : cancel);
       }
       var contacts = collectContacts();
       var joints = PHYS.joints, nj = joints.length;
@@ -3777,6 +3897,104 @@ if (Settings.paused) rd = 0;
   }
 };
 
+// ---- Gibs: chunks thrown out by an explosion (decorative, bullets pass through them) ----
+function removeAll(arr, items) {
+  for (var i = arr.length - 1; i >= 0; i--) if (items.indexOf(arr[i]) >= 0) arr.splice(i, 1);
+}
+
+var Gibs = {
+  list: [], geos: null, mats: null,
+
+  init: function () {
+    this.geos = [
+      new THREE.BoxGeometry(0.05, 0.05, 0.05),
+      new THREE.BoxGeometry(0.035, 0.035, 0.09),
+      new THREE.SphereGeometry(0.03, 6, 5),
+      new THREE.BoxGeometry(0.02, 0.02, 0.12)
+    ];
+    this.mats = [
+      new THREE.MeshStandardMaterial({ color: 0x7a0c0c, roughness: 0.4 }),
+      new THREE.MeshStandardMaterial({ color: 0x9a1a14, roughness: 0.5 }),
+      new THREE.MeshStandardMaterial({ color: 0xd8cdb4, roughness: 0.6 }),   // bone
+      new THREE.MeshStandardMaterial({ color: 0xc89a7a, roughness: 0.6 })    // skin
+    ];
+  },
+
+  spawn: function (p, v) {
+    if (!this.geos) this.init();
+    var mesh = new THREE.Mesh(this.geos[(Math.random() * this.geos.length) | 0],
+                              this.mats[(Math.random() * this.mats.length) | 0]);
+    mesh.position.copy(p);
+    mesh.scale.setScalar(0.7 + Math.random() * 0.8);
+    mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    Decals.scene.add(mesh);
+    this.list.push({
+      mesh: mesh, vel: v, bounces: 0, rest: false, life: 30,
+      spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20)
+    });
+    if (this.list.length > 300) {
+      var old = this.list.shift();
+      Decals.scene.remove(old.mesh);
+    }
+  },
+
+  burst: function (centre, from, dirV, count) {
+    var out = centre.clone().sub(from);
+    if (out.lengthSq() < 1e-6) out.set(0, 1, 0);
+    out.normalize();
+    for (var i = 0; i < count; i++) {
+      var v = out.clone().multiplyScalar(2 + Math.random() * 4)
+        .addScaledVector(dirV, 0.5)
+        .add(new THREE.Vector3((Math.random() - 0.5) * 4, 1 + Math.random() * 4, (Math.random() - 0.5) * 4));
+      var p = centre.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15, (Math.random() - 0.5) * 0.15));
+      this.spawn(p, v);
+    }
+  },
+
+  update: function (dt) {
+    var list = this.list;
+    for (var i = list.length - 1; i >= 0; i--) {
+      var g = list[i], m = g.mesh, v = g.vel;
+      g.life -= dt;
+      if (g.life <= 0) { Decals.scene.remove(m); list.splice(i, 1); continue; }
+      if (g.rest) continue;
+      v.y -= 9.8 * dt;
+      m.position.addScaledVector(v, dt);
+      m.rotation.x += g.spin.x * dt;
+      m.rotation.y += g.spin.y * dt;
+      m.rotation.z += g.spin.z * dt;
+      if (m.position.y < 0.03) {
+        m.position.y = 0.03;
+        if (g.bounces === 0 && Math.random() < 0.5) {
+          Decals.pool(m.position.x, 0, m.position.z,
+            new THREE.Vector3(v.x + 1e-3, 0, v.z), Math.abs(v.y) + 0.5, 0.7, true);
+        }
+        if (v.y < -0.8 && g.bounces < 3) {
+          v.y = -v.y * 0.3; v.x *= 0.6; v.z *= 0.6;
+          g.spin.multiplyScalar(0.5);
+          g.bounces++;
+        } else {
+          g.rest = true;
+          v.set(0, 0, 0);
+          g.spin.set(0, 0, 0);
+        }
+      }
+    }
+  },
+
+  clear: function () {
+    for (var i = 0; i < this.list.length; i++) Decals.scene.remove(this.list[i].mesh);
+    this.list.length = 0;
+  }
+};
+
+// Hook into the existing per-frame decal update
+(function () {
+  var _du = Decals.update;
+  Decals.update = function (dt) { Gibs.update(dt); return _du.call(this, dt); };
+})();
+
 window.addEventListener('load', function () { Game.init(); });
 </script>
 <script>
@@ -4490,7 +4708,8 @@ window.addEventListener('load', function () { Game.init(); });
       var bodies = PHYS.bodies, n = bodies.length;
       for (var b = 0; b < n; b++) {
         var hb = bodies[b].human;
-        bodies[b].v[1] -= PHYS.G * h * (hb.dead || bodies[b].free ? 1 : 1 - hb.ropeS);
+                var bd = bodies[b];
+        bd.v[1] -= PHYS.G * h * ((hb.dead || bd.free || bd.detached) ? 1 : 1 - hb.ropeS);
       }
       var contacts = collectContacts();
       var joints = PHYS.joints, nj = joints.length;
@@ -4602,6 +4821,8 @@ window.addEventListener('load', function () { Game.init(); });
     Effects.tracers.length = 0;
 
     Effects.bullets.length = 0;
+
+    Gibs.clear();
   }
 
   // Backspace: runs alongside the existing handler, with the same guards
@@ -5780,5 +6001,2474 @@ Effects.update = function (dt) {
   };
 })();
 </script>
+<script>
+// ===================== BLOOD RIVULETS =====================
+// Each rivulet walks over a body's surface under gravity. Points are snapped to the visible mesh,
+// drips only cross to a connected limb at its joint, and every switch starts a new trail segment
+// so no ribbon is ever drawn across a gap.
+var Rivulets = {
+  list: [],
+  MAX_RIVULETS: 40,
+  MAX_POINTS: 140,
+  STEP: 0.012,          // metres between trail points
+  SPEED: 0.22,          // top flow speed, metres per second
+  STOP_SPEED: 0.004,
+  SNAP_RANGE: 0.02,     // max distance a snapped point may move from the physics point
+  JOINT_RANGE: 0.12,    // drip must be this close to a joint to cross to the limb beyond it
+  _ray: new THREE.Raycaster(),
+
+  toWorld: function (b, p) {
+    var r = Qt.rot(b.q, p);
+    return [r[0] + b.x[0], r[1] + b.x[1], r[2] + b.x[2]];
+  },
+  toLocal: function (b, w) {
+    return Qt.rot(Qt.conj(b.q), [w[0] - b.x[0], w[1] - b.x[1], w[2] - b.x[2]]);
+  },
+  dist: function (a, b) {
+    var x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
+    return Math.sqrt(x * x + y * y + z * z);
+  },
+
+  // Closest point on a body's physics shape (body-local). Returns { d, n, q }.
+  surface: function (b, p) {
+    var sh = b.shape;
+    if (sh.t === 'cap') {
+      var L = sh.L, r = sh.r;
+      var ay = Math.max(-L / 2, Math.min(L / 2, p[1]));
+      var vx = p[0], vy = p[1] - ay, vz = p[2];
+      var len = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      var n = len > 1e-6 ? [vx / len, vy / len, vz / len] : [1, 0, 0];
+      return { d: len - r, n: n, q: [n[0] * r, ay + n[1] * r, n[2] * r] };
+    }
+    var best = null, sp = b.sp;
+    for (var i = 0; i < sp.length; i++) {
+      var s = sp[i];
+      var dx = p[0] - s[0], dy = p[1] - s[1], dz = p[2] - s[2];
+      var dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      var d = dl - s[3];
+      if (!best || d < best.d) {
+        var nn = dl > 1e-6 ? [dx / dl, dy / dl, dz / dl] : [0, 1, 0];
+        best = { d: d, n: nn, q: [s[0] + nn[0] * s[3], s[1] + nn[1] * s[3], s[2] + nn[2] * s[3]] };
+      }
+    }
+    return best;
+  },
+
+  // The joint that connects two bodies, or null
+  jointBetween: function (H, a, b) {
+    var js = H.jointsAll;
+    for (var i = 0; i < js.length; i++) {
+      var j = js[i];
+      if ((j.a === a && j.b === b) || (j.a === b && j.b === a)) return j;
+    }
+    return null;
+  },
+
+  // Snap a body-local point onto the real visible mesh of that body.
+  // Casts inward along the normal from just outside the surface. Returns { lp, ln } or null.
+  snap: function (b, lp, ln) {
+    var H = b.human, meshes = [];
+    for (var i = 0; i < H.parts.length; i++) {
+      var m = H.parts[i];
+      if (m.userData.limb === b.name && m.parent) meshes.push(m);
+    }
+    if (!meshes.length || !b.group) return null;
+    b.group.updateMatrixWorld(true);
+
+    var out = [lp[0] + ln[0] * 0.03, lp[1] + ln[1] * 0.03, lp[2] + ln[2] * 0.03];
+    var o = this.toWorld(b, out);
+    var wn = Vx.norm(Qt.rot(b.q, ln));
+    var origin = new THREE.Vector3(o[0], o[1], o[2]);
+    var dir = new THREE.Vector3(-wn[0], -wn[1], -wn[2]);
+
+    this._ray.set(origin, dir);
+    this._ray.near = 0;
+    this._ray.far = 0.06;
+    var hits = this._ray.intersectObjects(meshes, false);
+    if (!hits.length) return null;
+
+    var h = hits[0];
+    var hp = [h.point.x, h.point.y, h.point.z];
+    var nLocal = this.toLocal(b, hp);
+    var nW = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dir.clone().negate();
+    var nl = Vx.norm(Qt.rot(Qt.conj(b.q), [nW.x, nW.y, nW.z]));
+
+    // Reject if the snap moved the point too far (a different surface was hit)
+    if (this.dist(nLocal, lp) > this.SNAP_RANGE + 0.03) return null;
+    return { lp: nLocal, ln: nl };
+  },
+
+  neighbours: function (H, b) {
+    var out = [], js = H.jointsAll;
+    for (var i = 0; i < js.length; i++) {
+      var j = js[i];
+      if (j.a === b) out.push(j.b); else if (j.b === b) out.push(j.a);
+    }
+    return out;
+  },
+
+  spawn: function (H, part, object, point, dir, dmg, weapon) {
+    var limb = object.userData.limb;
+    var b = limb && H.byName[limb];
+    if (!b) return;
+    var lp0 = this.toLocal(b, Vx.arr(point));
+    var s0 = this.surface(b, lp0);
+    var sn = this.snap(b, s0.q, s0.n);
+    var lp = sn ? sn.lp : s0.q, ln = sn ? sn.ln : s0.n;
+    var ws = (weapon && weapon.woundScale) || 1;
+    var width = Math.min(0.05, 0.01 + dmg * 0.0002) * ws * 2;
+    var count = dmg > 60 ? 3 : 2;
+    for (var k = 0; k < count; k++) this.add(H, b, lp.slice(), ln.slice(), width);
+  },
+
+    add: function (H, b, lp, ln, width) {
+    if (this.list.length >= this.MAX_RIVULETS) this.free(this.list.shift());
+
+    var geo = new THREE.BufferGeometry();
+    var pos = new Float32Array(this.MAX_POINTS * 2 * 3);
+    var nor = new Float32Array(this.MAX_POINTS * 2 * 3);
+    var idx = new Uint32Array((this.MAX_POINTS - 1) * 6);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1).setUsage(THREE.DynamicDrawUsage));
+    geo.setDrawRange(0, 0);
+
+    var mat = new THREE.MeshPhysicalMaterial({
+      color: 0x5a0606, roughness: 0.22, metalness: 0,
+      clearcoat: 0.9, clearcoatRoughness: 0.12,
+      side: THREE.DoubleSide, transparent: true, opacity: 1, depthWrite: false
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    Decals.scene.add(mesh);
+
+    var rv = {
+      H: H, body: b, lp: lp, ln: ln, trail: [], brk: false,
+      v: 0.05 + Math.random() * 0.06, still: 0, phase: (Math.random() - 0.5) * 0.6,
+      acc: 0, width: width, stopped: false, fade: 0,
+      budget: 0.25 + Math.random() * 0.55,   // random travel limit, metres of surface
+      geo: geo, mat: mat, mesh: mesh
+    };
+    rv.trail.push({ b: b, lp: lp.slice(), ln: ln.slice(), brk: false });
+    this.list.push(rv);
+  },
+
+    step: function (rv, dt) {
+    var b = rv.body, H = rv.H;
+    if (H.bodies.indexOf(b) < 0) { rv.stopped = true; return; }
+
+    var gl = Qt.rot(Qt.conj(b.q), [0, -1, 0]);
+    var nd = Vx.dot(gl, rv.ln);
+    var t = [gl[0] - rv.ln[0] * nd, gl[1] - rv.ln[1] * nd, gl[2] - rv.ln[2] * nd];
+    var gt = Vx.len(t);
+    var tn = gt > 1e-6 ? Vx.mul(t, 1 / gt) : [0, 0, 0];
+
+    // Slows as the budget runs out, so the drip thins out instead of stopping dead
+    var fadeOut = Math.min(1, Math.max(0, rv.budget) * 4);
+    var target = this.SPEED * Math.min(1, gt * 2.5) * fadeOut;
+    rv.v += (target - rv.v) * Math.min(1, dt * 3);
+    if (rv.v < this.STOP_SPEED) { rv.still += dt; if (rv.still > 0.8) rv.stopped = true; }
+    else rv.still = 0;
+
+    var sd = Vx.norm(Vx.cross(rv.ln, tn));
+    rv.phase = rv.phase * 0.97 + (Math.random() - 0.5) * dt * 8;
+    var dir = Vx.norm([
+      tn[0] + sd[0] * rv.phase,
+      tn[1] + sd[1] * rv.phase,
+      tn[2] + sd[2] * rv.phase
+    ]);
+
+    var dist = rv.v * dt;
+    while (dist > 1e-6 && !rv.stopped) {
+      var adv = Math.min(dist, 0.006);
+      dist -= adv;
+      rv.budget -= adv;
+      if (rv.budget <= 0) { rv.stopped = true; break; }
+      var p = [rv.lp[0] + dir[0] * adv, rv.lp[1] + dir[1] * adv, rv.lp[2] + dir[2] * adv];
+      var s = this.surface(rv.body, p);
+      rv.lp = s.q;
+      rv.ln = s.n;
+      rv.acc += adv;
+      if (rv.acc >= this.STEP) { rv.acc = 0; this.push(rv); }
+    }
+
+    if (!rv.stopped) this.checkSwitch(rv);
+
+    var wp = this.toWorld(rv.body, rv.lp);
+    if (wp[1] < 0.015 && !rv.stopped) {
+      var dirV = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5);
+      Decals.pool(wp[0], 0.003, wp[2], dirV, 1.2, 0.8, false);
+      rv.stopped = true;
+    }
+  },
+
+    // A drip crosses to a connected body only at a joint that hangs below the current body's centre,
+  // and only once the drip has gone below that joint. Chest -> abdomen -> pelvis -> thighs -> shins.
+  checkSwitch: function (rv) {
+    var H = rv.H, b = rv.body;
+    var cur = this.toWorld(b, rv.lp);
+    var nbs = this.neighbours(H, b);
+    var best = null, bestY = -Infinity;
+
+    for (var k = 0; k < nbs.length; k++) {
+      var nb = nbs[k];
+      var j = this.jointBetween(H, b, nb);
+      if (!j) continue;
+
+      var anchorLocal = (j.a === b) ? j.pa : j.pb;
+      var anchor = this.toWorld(b, anchorLocal);
+
+      if (anchor[1] >= b.x[1]) continue;       // joint is above this body's centre: never go up
+      if (cur[1] > anchor[1] - 0.02) continue; // drip must have reached below the joint
+
+      if (anchor[1] > bestY) { bestY = anchor[1]; best = nb; }
+    }
+
+    if (!best) return;
+
+    var s2 = this.surface(best, this.toLocal(best, cur));
+    rv.body = best;
+    rv.lp = s2.q;
+    rv.ln = s2.n;
+    rv.brk = true;
+  },
+
+  push: function (rv) {
+    if (rv.trail.length >= this.MAX_POINTS) { rv.stopped = true; return; }
+    var lp = rv.lp, ln = rv.ln;
+    var sn = this.snap(rv.body, lp, ln);
+    if (sn) { lp = sn.lp; ln = sn.ln; rv.lp = lp; rv.ln = ln; }
+    rv.trail.push({ b: rv.body, lp: lp.slice(), ln: ln.slice(), brk: rv.brk });
+    rv.brk = false;
+  },
+
+  // Build the ribbon. Segments that cross a trail break are skipped.
+  render: function (rv) {
+    var n = rv.trail.length, geo = rv.geo;
+    if (n < 2) { geo.setDrawRange(0, 0); return; }
+
+    var wp = [], wn = [], i;
+    for (i = 0; i < n; i++) {
+      var tp = rv.trail[i];
+      wp.push(this.toWorld(tp.b, tp.lp));
+      wn.push(Vx.norm(Qt.rot(tp.b.q, tp.ln)));
+    }
+
+    var P = geo.attributes.position.array, N = geo.attributes.normal.array;
+    for (i = 0; i < n; i++) {
+      var a = wp[Math.max(0, i - 1)], c = wp[Math.min(n - 1, i + 1)];
+      var T = Vx.norm([c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+      var nn = wn[i];
+      var side = Vx.norm(Vx.cross(nn, T));
+      var s = i / (n - 1);
+      var hw = rv.width * 0.5 * (1 - 0.6 * s) + 0.001;
+      var o = 0.004, p = wp[i], k = i * 6;
+
+      P[k]     = p[0] + side[0] * hw + nn[0] * o;
+      P[k + 1] = p[1] + side[1] * hw + nn[1] * o;
+      P[k + 2] = p[2] + side[2] * hw + nn[2] * o;
+      P[k + 3] = p[0] - side[0] * hw + nn[0] * o;
+      P[k + 4] = p[1] - side[1] * hw + nn[1] * o;
+      P[k + 5] = p[2] - side[2] * hw + nn[2] * o;
+
+      N[k]     = N[k + 3] = nn[0];
+      N[k + 1] = N[k + 4] = nn[1];
+      N[k + 2] = N[k + 5] = nn[2];
+    }
+
+    var I = geo.index.array, cnt = 0;
+    for (i = 0; i < n - 1; i++) {
+      if (rv.trail[i + 1].brk) continue;
+      var v = i * 2;
+      I[cnt++] = v; I[cnt++] = v + 1; I[cnt++] = v + 2;
+      I[cnt++] = v + 1; I[cnt++] = v + 3; I[cnt++] = v + 2;
+    }
+
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.normal.needsUpdate = true;
+    geo.index.needsUpdate = true;
+    geo.setDrawRange(0, cnt);
+  },
+
+  free: function (rv) {
+    if (rv.mesh.parent) rv.mesh.parent.remove(rv.mesh);
+    rv.geo.dispose();
+    rv.mat.dispose();
+  },
+
+  clear: function () {
+    for (var i = 0; i < this.list.length; i++) this.free(this.list[i]);
+    this.list.length = 0;
+  },
+
+  clearFor: function (H) {
+    for (var i = this.list.length - 1; i >= 0; i--) {
+      if (this.list[i].H === H) { this.free(this.list[i]); this.list.splice(i, 1); }
+    }
+  },
+
+  update: function (dt) {
+    for (var i = this.list.length - 1; i >= 0; i--) {
+      var rv = this.list[i];
+      if (!rv.stopped) this.step(rv, dt);
+      else rv.fade += dt;
+      if (rv.trail.length >= 2) this.render(rv);
+
+      if (rv.stopped && rv.fade > 25) { this.free(rv); this.list.splice(i, 1); continue; }
+      rv.mat.opacity = (rv.stopped && rv.fade > 15) ? Math.max(0, 1 - (rv.fade - 15) / 10) : 1;
+    }
+  }
+};
+
+// ---- Hooks: wrap existing functions, so nothing else in the file changes ----
+(function () {
+  var _hit = Humans.hit;
+  Humans.hit = function (H, part, object, point, dir, dmg, weapon, normal) {
+    var res = _hit.apply(this, arguments);
+    Rivulets.spawn(H, part, object, point, dir, dmg, weapon);
+    return res;
+  };
+
+  var _respawn = Humans.respawn;
+  Humans.respawn = function (H) {
+    Rivulets.clearFor(H);
+    return _respawn.apply(this, arguments);
+  };
+
+  var _gibClear = Gibs.clear;
+  Gibs.clear = function () {
+    Rivulets.clear();
+    return _gibClear.call(this);
+  };
+
+  var _du = Decals.update;
+  Decals.update = function (dt) {
+    Rivulets.update(dt);
+    return _du.call(this, dt);
+  };
+})();
+</script>
+<script>
+// ===================== BALANCE, STUMBLE, GET-UP AND HOLDS =====================
+function balSmooth(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+
+var Balance = {
+  T: {
+    RECOVER_MIN: 1.6, RECOVER_MAX: 2.4,  // seconds a stumble has to regain balance
+    TRIP_CHANCE: 0,                    // chance a leg hit trips him straight over
+    PAIN_HIT: 0.25,                      // pain added per hit (0 to 1)
+    PAIN_DECAY: 0.15,                    // pain removed per second
+    GETUP_TIME: 4.2                      // seconds for the full get-up
+  },
+
+  get: function (H) {
+    return H.bal || (H.bal = { state: 'stand', t: 0, side: 'L', planted: false, plantT: 0,
+      recover: 2, trip: false, pain: 0, downT: 0, gx: 0, gz: 0 });
+  },
+
+  // Sets a joint's target angle. Hinges rotate about their own axis, ball joints about X.
+  setJoint: function (H, child, ang) {
+    for (var i = 0; i < H.joints.length; i++) {
+      var j = H.joints[i];
+      if (j.b.name === child) {
+        j.target = Qt.fromAxis(j.type === 'hinge' ? j.axis : [1, 0, 0], ang);
+        return;
+      }
+    }
+  },
+
+  // flex: forward hip angle. bend: knee angle (positive folds the shin backward).
+    legs: function (H, side, flex, bend) {
+    this.setJoint(H, 'th' + side, flex);
+    this.setJoint(H, 'sh' + side, bend);
+  },
+
+  // flex: forward shoulder angle. bend: elbow angle.
+  arms: function (H, side, flex, bend) {
+    this.setJoint(H, 'ua' + side, -flex);
+    this.setJoint(H, 'fa' + side, bend);
+  },
+
+  resetPose: function (H) {
+    var names = ['thL', 'thR', 'shL', 'shR', 'uaL', 'uaR', 'faL', 'faR'];
+    for (var i = 0; i < names.length; i++) this.setJoint(H, names[i], 0);
+  },
+
+  // A leg hit starts a stumble. Some hits trip him straight to the floor.
+  onLegHit: function (H, limb) {
+    var B = this.get(H);
+    if (B.state !== 'stand' && B.state !== 'stumble') return;
+    B.side = limb.slice(-1);
+    B.trip = Math.random() < this.T.TRIP_CHANCE;
+    B.recover = B.trip ? 0.25 : this.T.RECOVER_MIN + Math.random() * (this.T.RECOVER_MAX - this.T.RECOVER_MIN);
+    if (B.state === 'stand') { B.state = 'stumble'; B.t = 0; B.planted = false; B.plantT = 0; }
+  },
+
+  fall: function (H) {
+    var B = this.get(H);
+    B.state = 'fall'; B.t = 0;
+    H.downed = true;
+    this.resetPose(H);
+  },
+
+  startGetup: function (H, B, pel) {
+    B.state = 'getup'; B.t = 0;
+    B.gx = pel.x[0]; B.gz = pel.x[2];
+    H.downed = false;
+  },
+
+  control: function (H, dt) {
+    var B = this.get(H), T = this.T;
+    var pel = H.byName.pelvis, fl = H.byName.ftL, fr = H.byName.ftR;
+    if (!pel) return;
+    B.pain = Math.max(0, B.pain - dt * T.PAIN_DECAY);
+    B.t += dt;
+
+    var legsOk = !!(fl && fr && H.byName.thL && H.byName.thR);
+    var h = pel.x[1];
+    var speed = Math.hypot(pel.v[0], pel.v[2]);
+    var off = 0;
+    if (legsOk) {
+      // Horizontal distance from the pelvis to the middle of the two feet
+      var sx = (fl.x[0] + fr.x[0]) * 0.5, sz = (fl.x[2] + fr.x[2]) * 0.5;
+      off = Math.hypot(pel.x[0] - sx, pel.x[2] - sz);
+    }
+
+    switch (B.state) {
+            case 'stand':
+        H.ropeS = 1; H.gravCancel = 0.9; H.motorS = 1;
+        B.lowT = (h < 0.7 || !legsOk) ? (B.lowT || 0) + dt : 0;
+        if (B.lowT > 0.4) { B.lowT = 0; this.fall(H); }
+        break;
+
+      case 'stumble':
+               H.ropeS = 0.25; H.gravCancel = B.planted ? 0.2 : 0.5; H.motorS = 1;
+        if (!legsOk) { this.fall(H); break; }
+        var sw = B.side, foot = H.byName['ft' + sw];
+        if (!B.planted) {
+          if (B.t < 0.35) this.legs(H, sw, -0.2, 1.3);   // the hit leg gives way
+          else this.legs(H, sw, 0.6, 0.35);              // reaches forward for a foothold
+          if (B.t > 0.35 && foot.x[1] < 0.1) { B.planted = true; B.plantT = 0; }
+        } else {
+          B.plantT += dt;
+          this.legs(H, sw, 0, 0.05);                     // braces on the planted foot
+        }
+        this.arms(H, 'L', 0.9, 1.0);                     // arms out to catch balance
+        this.arms(H, 'R', 0.9, 1.0);
+
+        if (h < 0.62 || off > 0.3 || (B.planted && B.plantT > 1.2 && off > 0.18) ||
+            (B.trip && B.t > 0.2) || B.t > B.recover + 1.2) {
+          this.fall(H);
+        } else if (B.t > B.recover && B.planted && off < 0.12 && h > 0.85) {
+          this.resetPose(H); B.state = 'stand'; B.t = 0;
+        }
+        break;
+
+      case 'fall':
+               H.ropeS = 0; H.gravCancel = 0; H.motorS = 0.25;
+        if (B.t > 0.8) { B.state = 'down'; B.t = 0; B.downT = 0; }
+        break;
+
+      case 'down':
+        H.ropeS = 0; H.motorS = 0.25;
+        B.downT += dt;
+        // Gets up only once the pain has worn off and he has been still for a while
+        if (B.pain < 0.15 && B.downT > 2 && speed < 0.15 && legsOk) this.startGetup(H, B, pel);
+        break;
+
+      case 'getup':
+        this.getup(H, B, dt, pel);
+        break;
+    }
+  },
+
+  // Semi-procedural get-up: tuck the legs, push with the arms, lift the pelvis on a spring
+  // with a little sway, then straighten and hand control back to standing.
+  getup: function (H, B, dt, pel) {
+    if (B.pain > 0.6 && B.t > 1) { this.fall(H); return; }   // shot again while rising: back down
+
+    var P = Math.min(1, B.t / this.T.GETUP_TIME);
+    var tuck = balSmooth((P - 0.1) / 0.6);
+    var lift = balSmooth((P - 0.3) / 0.6);
+    H.ropeS = balSmooth((P - 0.2) / 0.25);
+    H.gravCancel = H.ropeS;
+    H.motorS = 0.6 + 0.4 * P;
+    var sway = Math.sin(B.t * 3.1) * 0.04 * (1 - P);
+    H.ropeTarget = [B.gx + sway, 0.3 + 0.68 * lift, B.gz];
+
+    var flex = 0.6 * (1 - tuck), bend = 1.7 * (1 - tuck);
+    this.legs(H, 'L', flex, bend);
+    this.legs(H, 'R', flex, bend);
+
+    var push = Math.sin(B.t * 4) * 0.12 * (1 - lift);
+    var fl = 0.2 * (1 - lift), eb = 0.9 * (1 - lift) + push;
+    this.arms(H, 'L', fl, eb);
+    this.arms(H, 'R', fl, eb);
+
+    if (P >= 1) {
+      H.ropeTarget = [pel.x[0], 0.98, pel.x[2]];
+      this.resetPose(H);
+      H.ropeS = 1; H.motorS = 1;
+      B.state = 'stand'; B.t = 0;
+    }
+  }
+};
+
+// Hit hook: pain builds, leg hits start stumbles, and a fatal shot switches the state off
+(function () {
+  var _hit = Humans.hit;
+  Humans.hit = function (H, part, object, point, dir, dmg, weapon, normal) {
+    var wasDead = H.dead;
+    var res = _hit.apply(this, arguments);
+    if (!wasDead) {
+      var B = Balance.get(H);
+      B.pain = Math.min(1, B.pain + Balance.T.PAIN_HIT);
+      var limb = object.userData.limb;
+      if (H.dead) B.state = 'dead';
+      else if (Humans.LEG_PARTS[part] && limb) Balance.onLegHit(H, limb);
+    }
+    return res;
+  };
+
+  var _resp = Humans.respawn;
+  Humans.respawn = function (H) {
+    H.holds = [];
+    H.bal = null;
+    H.ropeTarget = [H.x0, 0.98, H.z0];
+    return _resp.apply(this, arguments);
+  };
+})();
+
+// Hold forces: each active hold pulls its hand toward the wound
+function holdForces(H, h) {
+  if (!H.holds || H.dead) return;
+  for (var i = 0; i < H.holds.length; i++) {
+    var hd = H.holds[i], hand = hd.hand, wd = hd.wound;
+    rotS(wd.b.q, wd.lp, _t1, 1);
+    var fx = (wd.b.x[0] + _t1[0] - hand.x[0]) * 40 - hand.v[0] * 4;
+    var fy = (wd.b.x[1] + _t1[1] - hand.x[1]) * 40 - hand.v[1] * 4;
+    var fz = (wd.b.x[2] + _t1[2] - hand.x[2]) * 40 - hand.v[2] * 4;
+    var fmag = Math.sqrt(fx * fx + fy * fy + fz * fz);
+    if (fmag > 20) { var sc = 20 / fmag; fx *= sc; fy *= sc; fz *= sc; }
+    _imp[0] = fx * h; _imp[1] = fy * h; _imp[2] = fz * h;
+    applyImpulse(PHYS.ground, hand, [0, 0, 0], [0, 0, 0], _imp);
+  }
+}
+
+// The original applyHumanForces still runs; the hold forces are added after it
+var _ahf = applyHumanForces;
+applyHumanForces = function (H, h) {
+  _ahf(H, h);
+  holdForces(H, h);
+};
+
+// Replaces the update loop. Same work as before, plus balance control and hold timers.
+Humans.update = function (dt, time, px, py, pz) {
+  var i, H;
+  for (i = 0; i < this.list.length; i++) {
+    H = this.list[i];
+    H.age += dt;
+    if (H.dead) {
+      H.deadT += dt;
+      H.ropeS = 0;
+      H.motorS = rigorStrength(H.deadT);
+      if (H.twitch) H.twitch.t += dt;
+      H.holds = [];
+    } else {
+      this.lookAt(H, px, py, pz);
+      Balance.control(H, dt);
+      if (H.holds) {
+        for (var q = H.holds.length - 1; q >= 0; q--) {
+          var hd = H.holds[q];
+          hd.t -= dt;
+          if (hd.t <= 0 || H.bodies.indexOf(hd.hand) < 0 || H.bodies.indexOf(hd.wound.b) < 0) H.holds.splice(q, 1);
+        }
+      }
+    }
+  }
+
+  var allAsleep = this.list.length > 0;
+  for (i = 0; i < this.list.length; i++) {
+    if (!(this.list[i].dead && this.list[i].sleeping)) { allAsleep = false; break; }
+  }
+  if (!allAsleep) Ragdoll.step(dt);
+
+  for (i = 0; i < this.list.length; i++) {
+    H = this.list[i];
+    this.syncVisuals(H);
+    this.updateWounds(H, dt);
+    if (H.dead) this.updateSmears(H, dt);
+    this.updateSleep(H, dt);
+    H.collider.top = H.dead ? 0 : this.standColliderTop;
+    var pz0 = H.byName.pelvis;
+    H.collider.min.x = pz0.x[0] - 0.3; H.collider.max.x = pz0.x[0] + 0.3;
+    H.collider.min.z = pz0.x[2] - 0.3; H.collider.max.z = pz0.x[2] + 0.3;
+  }
+};
+</script>
+<script>
+// ===================== PROCEDURAL STUMBLE AND FOOT PLANTING =====================
+// Standing and stumbling are driven by feet. Joint targets come from two-bone IK toward each foot.
+// Feet plant on the floor, swing along arcs to catch balance, and the body falls when balance is lost.
+var Gait = {
+  L1: 0.42, L2: 0.42,               // thigh and shin length
+  OMEGA: Math.sqrt(9.8 / 0.98),     // pendulum frequency for the capture point
+  WIDTH: 0.11,                      // half stance width
+  ANKLE_HEIGHT: 0.08,               // ankle height above a flat foot
+  STEP_TRIGGER: 0.12,               // capture point this far from support starts a step
+  STEP_TIME: 0.3,                   // seconds per swing
+  STEP_LIFT: 0.09,                  // swing foot height
+  BUCKLE_TIME: 0.5,                 // seconds the hit leg buckles
+  LOST_FALL: 0.7,                   // seconds balance can stay lost before he falls
+  LOW_PELVIS: 0.6,                  // pelvis height below which he falls
+
+  // Body frame in world space
+  pose: function (H) {
+    var pel = H.byName.pelvis;
+    var f = Qt.rot(pel.q, [0, 0, 1]); f[1] = 0;
+    var fl = Math.hypot(f[0], f[2]) || 1;
+    var r = Qt.rot(pel.q, [1, 0, 0]); r[1] = 0;
+    var rl = Math.hypot(r[0], r[2]) || 1;
+    return {
+      x: pel.x[0], y: pel.x[1], z: pel.x[2],
+      vx: pel.v[0], vz: pel.v[2],
+      fwd: [f[0] / fl, 0, f[2] / fl],
+      right: [r[0] / rl, 0, r[2] / rl]
+    };
+  },
+
+  // Hip joint in world space
+  hip: function (H, s) {
+    var pel = H.byName.pelvis;
+    var o = Qt.rot(pel.q, [s === 'L' ? 0.10 : -0.10, -0.06, 0]);
+    return [pel.x[0] + o[0], pel.x[1] + o[1], pel.x[2] + o[2]];
+  },
+
+  // Standing foot position under the hip
+  rest: function (s, p) {
+    var sg = s === 'L' ? 1 : -1;
+    return [
+      p.x + p.right[0] * sg * this.WIDTH + p.fwd[0] * 0.04, 0,
+      p.z + p.right[2] * sg * this.WIDTH + p.fwd[2] * 0.04
+    ];
+  },
+
+  ensure: function (H) {
+    if (H.gait) return H.gait;
+    var p = this.pose(H);
+    var G = H.gait = { legs: {}, buckle: 0, buckleSide: null, lostT: 0, lastS: null };
+    var sides = ['L', 'R'];
+    for (var i = 0; i < 2; i++) {
+      var r = this.rest(sides[i], p);
+      G.legs[sides[i]] = { stance: true, plant: r.slice(), cur: r.slice(), swing: null };
+    }
+    G.lastS = [
+      (G.legs.L.plant[0] + G.legs.R.plant[0]) / 2, 0,
+      (G.legs.L.plant[2] + G.legs.R.plant[2]) / 2
+    ];
+    return G;
+  },
+
+  startSwing: function (G, s, to, lift) {
+    var lg = G.legs[s];
+    lg.swing = { t: 0, dur: this.STEP_TIME, from: lg.cur.slice(), to: to, lift: lift };
+    lg.stance = false;
+  },
+
+  // Two-bone IK in the sagittal plane. Returns the hip flex and the knee bend.
+  solve: function (hip, ankle, fwd) {
+    var l1 = this.L1, l2 = this.L2, maxL = l1 + l2 - 0.003;
+    var d = [ankle[0] - hip[0], ankle[1] - hip[1], ankle[2] - hip[2]];
+    var L = Math.hypot(d[0], d[1], d[2]);
+    if (L > maxL) { var k = maxL / L; d = [d[0] * k, d[1] * k, d[2] * k]; L = maxL; }
+    if (L < 1e-4) return { flex: 0, bend: 0 };
+
+    var dir = [d[0] / L, d[1] / L, d[2] / L];
+    var a = (l1 * l1 - l2 * l2 + L * L) / (2 * L);
+    var hh = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+
+    var dp = fwd[0] * dir[0] + fwd[1] * dir[1] + fwd[2] * dir[2];
+    var pole = [fwd[0] - dir[0] * dp, fwd[1] - dir[1] * dp, fwd[2] - dir[2] * dp];
+    var pl = Math.hypot(pole[0], pole[1], pole[2]) || 1;
+    pole = [pole[0] / pl, pole[1] / pl, pole[2] / pl];
+
+    var knee = [
+      hip[0] + dir[0] * a + pole[0] * hh,
+      hip[1] + dir[1] * a + pole[1] * hh,
+      hip[2] + dir[2] * a + pole[2] * hh
+    ];
+    var end = [hip[0] + d[0], hip[1] + d[1], hip[2] + d[2]];
+
+    var ux = knee[0] - hip[0], uy = knee[1] - hip[1], uz = knee[2] - hip[2];
+    var ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    var vx = end[0] - knee[0], vy = end[1] - knee[1], vz = end[2] - knee[2];
+    var vl = Math.hypot(vx, vy, vz) || 1; vx /= vl; vy /= vl; vz /= vl;
+
+    var flex = Math.atan2(ux * fwd[0] + uz * fwd[2], -uy);
+    var c = Math.max(-1, Math.min(1, ux * vx + uy * vy + uz * vz));
+    return { flex: flex, bend: Math.acos(c) };
+  },
+
+   update: function (H, B, dt) {
+    var pel = H.byName.pelvis;
+    if (!pel) return;
+    var G = this.ensure(H), p = this.pose(H);
+    if (!p || typeof p.y !== 'number') { console.warn('Gait: bad pose', p, H.bodies.map(function (b) { return b.name; }).join(',')); return; }
+    var sides = ['L', 'R'];
+
+    // Gravity is fully active. The feet carry the body.
+                  var hitting = (G.hitRecent || 0) > 0;
+    G.footAir = false;
+    G.stress = Math.max(0, (G.stress || 0) - dt * 0.4);
+    // Rope holds the pelvis at the height and spot it had when the stumble began.
+    // Gravity is fully on, so the legs carry the weight instead of the body sagging.
+    if (hitting) {
+      if (G.holdY === undefined) G.holdY = Math.max(0.85, pel.x[1]);
+      if (G.holdX === undefined) { G.holdX = pel.x[0]; G.holdZ = pel.x[2]; }
+      H.ropeTarget = [G.holdX, G.holdY, G.holdZ];
+      H.ropeS = 0.7; H.gravCancel = 1; H.motorS = 1;
+    } else {
+      G.holdY = undefined; G.holdX = undefined; G.holdZ = undefined;
+      H.ropeTarget = [pel.x[0], 0.98, pel.x[2]];
+      H.ropeS = 1; H.gravCancel = 1; H.motorS = 1;
+    }
+    B.t = (B.t || 0) + dt;
+
+    // Capture point: where the body would come to rest over the feet
+    var cp = [p.x + p.vx / this.OMEGA, 0, p.z + p.vz / this.OMEGA];
+
+    // Advance swings and planted feet
+    for (var i = 0; i < 2; i++) {
+      var s = sides[i], lg = G.legs[s];
+      if (lg.swing) {
+        var sw = lg.swing;
+        sw.t += dt;
+        var u = Math.min(1, sw.t / sw.dur), e = balSmooth(u);
+        lg.cur = [
+          sw.from[0] + (sw.to[0] - sw.from[0]) * e,
+                   sw.from[1] + (sw.to[1] - sw.from[1]) * e + Math.sin(Math.PI * u) * sw.lift,
+          sw.from[2] + (sw.to[2] - sw.from[2]) * e
+        ];
+                if (u >= 1) {
+          var gy = this.groundAt(sw.to[0], sw.to[2]);
+          var air = gy === null || sw.from[1] - gy > 0.25;   // nothing under the foot, or a big drop
+          if (air) { G.footAir = true; gy = sw.from[1]; }
+          lg.swing = null; lg.stance = true;
+          lg.plant = [sw.to[0], gy, sw.to[2]];
+          lg.cur = lg.plant.slice();
+        }
+      } else if (lg.stance) {
+        lg.cur = lg.plant.slice();
+      }
+    }
+
+    if (G.buckle > 0) G.buckle = Math.max(0, G.buckle - dt);
+
+    var swinging = !!(G.legs.L.swing || G.legs.R.swing);
+    var st = sides.filter(function (s) { return G.legs[s].stance; });
+
+    // Support centre: midpoint of planted feet, or the last known support
+    var S;
+    if (st.length === 2) {
+      S = [(G.legs.L.plant[0] + G.legs.R.plant[0]) / 2, 0, (G.legs.L.plant[2] + G.legs.R.plant[2]) / 2];
+    } else if (st.length === 1) {
+      S = G.legs[st[0]].plant.slice();
+    } else {
+      S = G.lastS;
+    }
+    G.lastS = S;
+
+    // Step with the rear foot when the capture point leaves the support
+    if (!swinging && st.length === 2 && G.buckle <= 0) {
+      var dCP = Math.hypot(cp[0] - S[0], cp[2] - S[2]);
+      if (dCP > this.STEP_TRIGGER) {
+        var rear = null, rd = Infinity;
+        for (var k = 0; k < 2; k++) {
+          var lp = G.legs[sides[k]].plant;
+          var dd = (lp[0] - cp[0]) * p.fwd[0] + (lp[2] - cp[2]) * p.fwd[2];
+          if (dd < rd) { rd = dd; rear = sides[k]; }
+        }
+        var sg = rear === 'L' ? 1 : -1;
+        this.startSwing(G, rear, [
+          cp[0] + p.right[0] * sg * this.WIDTH, 0,
+          cp[2] + p.right[2] * sg * this.WIDTH
+        ], this.STEP_LIFT);
+        swinging = true;
+      }
+    }
+
+       // Give the legs time to take weight before any fall check runs
+    G.age = (G.age || 0) + dt;
+    var settled = G.age > 1.5;
+    G.hitRecent = Math.max(0, (G.hitRecent || 0) - dt);
+
+    // Balance: grows when the capture point stays off support and no foot is catching it
+    var off = Math.hypot(cp[0] - S[0], cp[2] - S[2]);
+    var limit = st.length === 2 ? 0.2 : 0.28;
+    if (settled && !swinging && off > limit) G.lostT += dt;
+    else G.lostT = Math.max(0, G.lostT - dt * 2);
+              if (settled && hitting && (p.y < 0.45 || G.footAir || (G.stress || 0) > 5 || G.lostT > this.LOST_FALL)) {
+      if (window.GAIT_DEBUG) console.log('FALL', H.bodies.indexOf(H.byName.pelvis) >= 0 ? 'pelvisY ' + p.y.toFixed(2) : 'no pelvis', 'lostT', G.lostT.toFixed(2), 'off', off.toFixed(2), 'swinging', swinging, 'legsY', H.byName.ftL.x[1].toFixed(2), H.byName.ftR.x[1].toFixed(2));
+      H.gait = null;
+      Balance.fall(H);
+      return;
+    }
+
+    var stumbling = swinging || G.buckle > 0 || G.lostT > 0.05;
+    B.state = stumbling ? 'stumble' : 'stand';
+
+    // Legs: IK from each hip to its foot
+    for (var q = 0; q < 2; q++) {
+      var s2 = sides[q], lg2 = G.legs[s2];
+      var ext = (G.buckle > 0 && s2 === G.buckleSide) ? 0.7 : 0;
+      var r = this.solve(this.hip(H, s2), [lg2.cur[0], lg2.cur[1] + this.ANKLE_HEIGHT, lg2.cur[2]], p.fwd);
+      Balance.legs(H, s2, r.flex, r.bend + ext);
+    }
+
+    // Arms: out to catch balance while stumbling, relaxed while standing
+     if (stumbling) {
+      // Arms swing out and back while he searches for something to grab
+      var flail = Math.sin(G.age * 5);
+      Balance.arms(H, 'L', 1.0 + 0.35 * flail, 0.8 + 0.3 * Math.cos(G.age * 5));
+      Balance.arms(H, 'R', 1.0 - 0.35 * flail, 0.8 - 0.3 * Math.cos(G.age * 5));
+    }
+    else { Balance.arms(H, 'L', 0.1, 0.3); Balance.arms(H, 'R', 0.1, 0.3); }
+  },
+
+  // A leg hit buckles that leg and starts a catch step. Trips drop him at once.
+  hitLeg: function (H, side, trip) {
+    var B = Balance.get(H);
+    if (trip) { H.gait = null; Balance.fall(H); return; }
+
+    var G = this.ensure(H), p = this.pose(H);
+    G.buckle = this.BUCKLE_TIME;
+    G.hitRecent = 4;
+    G.buckleSide = side;
+    var sg = side === 'L' ? 1 : -1;
+    var cp = [p.x + p.vx / this.OMEGA, 0, p.z + p.vz / this.OMEGA];
+    if (G.legs[side].stance) {
+      this.startSwing(G, side, [
+        cp[0] + p.fwd[0] * 0.16 + p.right[0] * sg * this.WIDTH, 0,
+        cp[2] + p.fwd[2] * 0.16 + p.right[2] * sg * this.WIDTH
+      ], 0.13);
+    }
+    B.state = 'stumble';
+  }
+};
+
+// Route balance control and leg hits through Gait while standing or stumbling
+(function () {
+  var _bc = Balance.control;
+  Balance.control = function (H, dt) {
+    var B = this.get(H);
+    if (B.state === 'stand' || B.state === 'stumble') {
+      B.pain = Math.max(0, B.pain - dt * this.T.PAIN_DECAY);
+      try { Gait.update(H, B, dt); }
+      catch (e) {
+        if (!H._gaitErr) {
+          H._gaitErr = true;
+          console.error('Gait error:', e.message, e.stack);
+          console.log('pelvis:', H.byName.pelvis, 'bodies:', H.bodies.map(function (b) { return b.name; }).join(','));
+          console.log('gait:', H.gait, 'balance:', B);
+        }
+        H.gait = null;
+        return;
+      }
+      return;
+    }
+    H.gait = null;                     // rebuilt from the current pose when he stands again
+    return _bc.call(this, H, dt);
+  };
+
+  var _llh = Balance.onLegHit;
+  Balance.onLegHit = function (H, limb) {
+    var B = this.get(H);
+    if (B.state === 'stand' || B.state === 'stumble') {
+      Gait.hitLeg(H, limb.slice(-1), Math.random() < this.T.TRIP_CHANCE);
+      return;
+    }
+    return _llh.call(this, H, limb);
+  };
+})();
+</script>
+<script>
+// ===================== ANY HIT STARTS A STUMBLE =====================
+// Every hit on a living NPC starts the stumble. Leg hits buckle that leg and plant a catch step.
+// Torso and arm hits shove the balance. The rope and gravity cancel switch off for the stumble.
+(function () {
+  var _hit = Humans.hit;
+  Humans.hit = function (H, part, object, point, dir, dmg, weapon, normal) {
+    var wasDead = H.dead;
+    var res = _hit.apply(this, arguments);
+    if (!wasDead && !H.dead) {
+      var limb = object.userData.limb;
+      if (window.GAIT_DEBUG) console.log('HIT', part, limb);
+      Gait.onHit(H, part, limb);
+    }
+    return res;
+  };
+
+  var _resp = Humans.respawn;
+  Humans.respawn = function (H) {
+    H.gait = null;
+    return _resp.apply(this, arguments);
+  };
+})();
+
+Gait.onHit = function (H, part, limb) {
+  var B = Balance.get(H);
+  if (B.state !== 'stand' && B.state !== 'stumble') return;   // ignore hits while falling or getting up
+  var G = this.ensure(H);
+  G.hitRecent = 4;                                             // rope and gravity cancel stay off for 4 s
+
+  if (this.LEG_OK(part) && limb) {
+    this.hitLeg(H, limb.slice(-1), false);                     // buckle the leg and plant a catch step
+  } else {
+    G.lostT = Math.max(G.lostT || 0, 0.3);                     // torso or arm: shove the balance
+    B.state = 'stumble';
+  }
+};
+
+Gait.LEG_OK = function (part) { return !!Humans.LEG_PARTS[part]; };
+</script>
+<script>
+// ===================== BALANCE UNDER HITS: STRESS, GROUND PROBE, FOOT PLANTING =====================
+// Hits build stress instead of toppling him. Feet plant on the real surface under them.
+
+// Surface height under a point, from the visible meshes. null means nothing is there (air).
+Gait.groundAt = function (x, z) {
+  if (!this._ray) this._ray = new THREE.Raycaster();
+  this._ray.set(new THREE.Vector3(x, 1.5, z), new THREE.Vector3(0, -1, 0));
+  this._ray.far = 2;
+  var list = GameMap.solids.filter(function (m) { return m.isMesh && !m.userData.target && !m.userData.decal; });
+  var hits = this._ray.intersectObjects(list, false);
+  return hits.length ? hits[0].point.y : null;
+};
+
+// Swings aim at the real ground height of the target, so feet go up onto boxes and stay on the floor
+Gait.startSwing = function (G, s, to, lift) {
+  var lg = G.legs[s];
+  var gy = this.groundAt(to[0], to[2]);
+  var target = [to[0], gy === null ? lg.cur[1] : gy, to[2]];
+  lg.swing = { t: 0, dur: this.STEP_TIME, from: lg.cur.slice(), to: target, lift: lift };
+  lg.stance = false;
+};
+
+// Any hit adds stress. Leg hits also buckle the leg. Nothing here drops him by itself.
+Gait.onHit = function (H, part, limb) {
+  var B = Balance.get(H);
+  if (B.state !== 'stand' && B.state !== 'stumble') return;
+  var G = this.ensure(H);
+  G.hitRecent = 4;                                 // rope eases off and gravity mostly on for 4 s
+  G.stress = (G.stress || 0) + 1;
+
+  if (this.LEG_OK(part) && limb) {
+    this.hitLeg(H, limb.slice(-1), false);
+  } else {
+    B.state = 'stumble';
+  }
+};
+</script>
+<script>
+// ===================== HEAD-BALANCED WANDER: STEPPING, PAIN-DRIVEN, IDLE RETURN =====================
+// Balance is driven by the head, not the pelvis. The pelvis is held over the midpoint of the feet,
+// so it moves with the steps instead of pivoting in place. While in pain he wanders, planting one
+// foot at a time, and once the pain settles he returns to idle.
+
+Gait.STEP_TIME = 0.45;   // smoother swings than before
+Gait.WANDER = {
+  PAIN_ON: 0.08,         // pain above this keeps him wandering
+  CALM_TIME: 1.5,        // seconds below PAIN_ON (and no stress) before he returns to idle
+  STRIDE: 0.22,          // how far ahead of the feet midpoint a step lands
+  LEAN: 0.10,            // head this far ahead of the feet triggers a step
+  STEP_GAP: 0.35,        // minimum seconds between steps
+  STEP_MAX: 1.4,         // step anyway after this long, so he keeps wandering
+  TURN: 1.2              // how fast the wander direction drifts
+};
+
+Gait.update = function (H, B, dt) {
+  var pel = H.byName.pelvis, hd = H.byName.head;
+  if (!pel || !hd) return;
+  var G = this.ensure(H), p = this.pose(H);
+  var T = this.WANDER, sides = ['L', 'R'];
+
+  B.t = (B.t || 0) + dt;
+  G.age = (G.age || 0) + dt;
+  var settled = G.age > 1.5;
+  G.footAir = false;
+  G.hitRecent = Math.max(0, (G.hitRecent || 0) - dt);
+  G.stress = Math.max(0, (G.stress || 0) - dt * 0.4);
+  G.buckle = Math.max(0, (G.buckle || 0) - dt);
+  G.stepT = (G.stepT || 0) + dt;
+
+  // Wandering: active while in pain, stressed, or just hit. Idle after the pain has been calm for a while.
+  var active = (B.pain || 0) > T.PAIN_ON || G.stress > 0.5 || G.hitRecent > 0 || G.buckle > 0;
+  G.calmT = active ? 0 : (G.calmT || 0) + dt;
+  var wander = active || G.calmT < T.CALM_TIME;
+
+  // Wander direction drifts slowly while active
+  if (G.dirA === undefined) G.dirA = Math.random() * Math.PI * 2;
+  if (active) G.dirA += (Math.random() - 0.5) * dt * T.TURN;
+  var dir = [Math.sin(G.dirA), 0, Math.cos(G.dirA)];
+  var right = [dir[2], 0, -dir[0]];
+
+  // Advance swings and feet. Feet ease toward their planted spot.
+  var swinging = false;
+  for (var i = 0; i < 2; i++) {
+    var s = sides[i], lg = G.legs[s];
+    if (lg.swing) {
+      swinging = true;
+      var sw = lg.swing;
+      sw.t += dt;
+      var u = Math.min(1, sw.t / sw.dur), e = balSmooth(u);
+      lg.cur = [
+        sw.from[0] + (sw.to[0] - sw.from[0]) * e,
+        sw.from[1] + (sw.to[1] - sw.from[1]) * e + Math.sin(Math.PI * u) * sw.lift,
+        sw.from[2] + (sw.to[2] - sw.from[2]) * e
+      ];
+      if (u >= 1) {
+        var gy = this.groundAt(sw.to[0], sw.to[2]);
+        var air = gy === null || Math.abs(gy - (lg.groundY || 0)) > 0.35;
+        if (air) { G.footAir = true; gy = lg.groundY || 0; } else { lg.groundY = gy; }
+        lg.swing = null; lg.stance = true;
+        lg.plant = [sw.to[0], gy, sw.to[2]];
+      }
+    } else if (lg.stance) {
+      var k = Math.min(1, dt * 10), P = lg.plant, C = lg.cur;
+      lg.cur = [C[0] + (P[0] - C[0]) * k, C[1] + (P[1] - C[1]) * k, C[2] + (P[2] - C[2]) * k];
+    }
+  }
+
+  // Idle: feet go back to their standing spots
+  if (!wander && !swinging) {
+    for (var j = 0; j < 2; j++) {
+      G.legs[sides[j]].plant = this.rest(sides[j], p);
+      G.legs[sides[j]].stance = true;
+    }
+  }
+
+  // Support centre: midpoint of planted feet, or the stance foot alone
+  var st = sides.filter(function (x) { return G.legs[x].stance; });
+  var S;
+  if (st.length === 2) {
+    S = [(G.legs.L.plant[0] + G.legs.R.plant[0]) / 2, 0, (G.legs.L.plant[2] + G.legs.R.plant[2]) / 2];
+  } else if (st.length === 1) {
+    S = G.legs[st[0]].plant.slice();
+  } else {
+    S = G.lastS;
+  }
+  G.lastS = S;
+
+  // Head-based capture point: where the head would come to rest over the feet
+  var cpx = hd.x[0] + hd.v[0] / this.OMEGA, cpz = hd.x[2] + hd.v[2] / this.OMEGA;
+  var lead = (cpx - S[0]) * dir[0] + (cpz - S[2]) * dir[2];
+
+  // Step with the rear foot when the head leans ahead, or periodically while wandering
+  if (wander && !swinging && st.length === 2 && G.buckle <= 0 && G.stepT > T.STEP_GAP &&
+      (lead > T.LEAN || G.stepT > T.STEP_MAX)) {
+    var rear = null, rd = Infinity;
+    for (var q = 0; q < 2; q++) {
+      var pl = G.legs[sides[q]].plant;
+      var dd = (pl[0] - S[0]) * dir[0] + (pl[2] - S[2]) * dir[2];
+      if (dd < rd) { rd = dd; rear = sides[q]; }
+    }
+    var sg = rear === 'L' ? 1 : -1;
+    this.startSwing(G, rear, [
+      S[0] + dir[0] * T.STRIDE + right[0] * sg * this.WIDTH, 0,
+      S[2] + dir[2] * T.STRIDE + right[2] * sg * this.WIDTH
+    ], this.STEP_LIFT);
+    G.stepT = 0;
+    swinging = true;
+  }
+
+  // Pelvis follows the feet midpoint smoothly, so it moves with the steps instead of pivoting
+  G.ropeX = (G.ropeX === undefined) ? S[0] : G.ropeX + (S[0] - G.ropeX) * Math.min(1, dt * 3);
+  G.ropeZ = (G.ropeZ === undefined) ? S[2] : G.ropeZ + (S[2] - G.ropeZ) * Math.min(1, dt * 3);
+  if (wander) {
+    var sag = Math.min(0.12, (G.stress || 0) * 0.02 + (B.pain || 0) * 0.05);
+    H.ropeTarget = [G.ropeX, 0.98 - sag, G.ropeZ];
+    H.ropeS = 0.6; H.gravCancel = 0.9; H.motorS = 1;
+  } else {
+    G.ropeX = undefined; G.ropeZ = undefined;
+    H.ropeTarget = [pel.x[0], 0.98, pel.x[2]];
+    H.ropeS = 1; H.gravCancel = 1; H.motorS = 1;
+  }
+
+  // Falls: low pelvis, a foot planted over air or a big drop, too much stress, or the head far from the feet
+  var off = Math.hypot(cpx - S[0], cpz - S[2]);
+  if (settled && wander && (p.y < 0.45 || G.footAir || (G.stress || 0) > 5 || off > 0.5)) {
+    H.gait = null;
+    Balance.fall(H);
+    return;
+  }
+
+  B.state = active ? 'stumble' : 'stand';
+
+  // Arms flail while wandering, relax when idle
+  var flail = Math.sin(G.age * 5);
+  if (active) {
+    Balance.arms(H, 'L', 1.0 + 0.35 * flail, 0.8 + 0.3 * Math.cos(G.age * 5));
+    Balance.arms(H, 'R', 1.0 - 0.35 * flail, 0.8 - 0.3 * Math.cos(G.age * 5));
+  } else {
+    Balance.arms(H, 'L', 0.1, 0.3);
+    Balance.arms(H, 'R', 0.1, 0.3);
+  }
+
+  // Legs: IK from each hip to its foot. A buckled leg bends further.
+  for (var m = 0; m < 2; m++) {
+    var s2 = sides[m], lg2 = G.legs[s2];
+    var ext = (G.buckle > 0 && s2 === G.buckleSide) ? 0.7 : 0;
+    var r = this.solve(this.hip(H, s2), [lg2.cur[0], lg2.cur[1] + this.ANKLE_HEIGHT, lg2.cur[2]], p.fwd);
+    Balance.legs(H, s2, r.flex, r.bend + ext);
+  }
+};
+</script>
+<script>
+// ===================== BACKWARD STUMBLE, PLANTING, DECELERATION, IDLE =====================
+// A hit gives energy. Energy drives a backward stumble with slow, planted steps.
+// Energy drains over time: steps get slower and shorter until he stops and idles.
+// He falls only if a foot plants over air or a big drop, stress builds up, or the pelvis is pushed low.
+Gait.BACK = {
+  DECAY: 0.22,      // energy lost per second (stumble lasts about 4-5 s)
+  GAP: 0.5,         // seconds between steps at full energy
+  GAP_EXTRA: 0.8,   // extra seconds between steps as energy fades
+  STRIDE: 0.18,     // step length at full energy
+  DRIFT: 0.6        // random sideways drift on the backward heading (radians)
+};
+Gait.STEP_TIME = 0.5;
+
+// Any hit: energy to full, stress up, step on the next frame, and head backward away from the body's facing
+Gait.onHit = function (H, part, limb) {
+  var B = Balance.get(H);
+  if (B.state !== 'stand' && B.state !== 'stumble') return;
+  var G = this.ensure(H), p = this.pose(H);
+  G.energy = 1;
+  G.stress = (G.stress || 0) + 1;
+  G.stepT = 10;
+  G.dirA = Math.atan2(-p.fwd[0], -p.fwd[2]) + (Math.random() - 0.5) * this.BACK.DRIFT;
+  if (this.LEG_OK(part) && limb) this.hitLeg(H, limb.slice(-1), false);
+  else B.state = 'stumble';
+};
+
+// A leg hit buckles that leg. It no longer lunges forward or drops him on its own.
+Gait.hitLeg = function (H, side, trip) {
+  var B = Balance.get(H);
+  if (trip) { H.gait = null; Balance.fall(H); return; }
+  var G = this.ensure(H);
+  G.buckle = 0.6;
+  G.buckleSide = side;
+  B.state = 'stumble';
+};
+
+Gait.update = function (H, B, dt) {
+  var pel = H.byName.pelvis, hd = H.byName.head;
+  if (!pel || !hd) return;
+  var G = this.ensure(H), p = this.pose(H), T = this.BACK, sides = ['L', 'R'];
+
+  G.age = (G.age || 0) + dt;
+  G.energy = Math.max(0, (G.energy || 0) - dt * T.DECAY);
+  G.stress = Math.max(0, (G.stress || 0) - dt * 0.4);
+  G.buckle = Math.max(0, (G.buckle || 0) - dt);
+  G.stepT = (G.stepT || 0) + dt;
+  G.footAir = false;
+  if (G.dirA === undefined) G.dirA = Math.atan2(-p.fwd[0], -p.fwd[2]);
+
+  var active = G.energy > 0.02;
+  var dir = [Math.sin(G.dirA), 0, Math.cos(G.dirA)];
+  var right = [dir[2], 0, -dir[0]];
+
+  // Advance swings. A foot that lands on a big drop or on air flags a fall.
+  var swinging = false;
+  for (var i = 0; i < 2; i++) {
+    var s = sides[i], lg = G.legs[s];
+    if (lg.swing) {
+      swinging = true;
+      var sw = lg.swing;
+      sw.t += dt;
+      var u = Math.min(1, sw.t / sw.dur), e = balSmooth(u);
+      lg.cur = [
+        sw.from[0] + (sw.to[0] - sw.from[0]) * e,
+        sw.from[1] + (sw.to[1] - sw.from[1]) * e + Math.sin(Math.PI * u) * sw.lift,
+        sw.from[2] + (sw.to[2] - sw.from[2]) * e
+      ];
+      if (u >= 1) {
+        var gy = this.groundAt(sw.to[0], sw.to[2]);
+        var ref = (lg.groundY === undefined) ? 0 : lg.groundY;
+        if (gy === null || Math.abs(gy - ref) > 0.25) {
+          G.footAir = true;
+          gy = ref;
+        } else {
+          lg.groundY = gy;
+        }
+        lg.swing = null;
+        lg.stance = true;
+        lg.plant = [sw.to[0], gy, sw.to[2]];
+      }
+    } else if (lg.stance) {
+      var k = Math.min(1, dt * 10), P = lg.plant, C = lg.cur;
+      lg.cur = [C[0] + (P[0] - C[0]) * k, C[1] + (P[1] - C[1]) * k, C[2] + (P[2] - C[2]) * k];
+    }
+  }
+
+  // Idle: feet return to their standing spots on the ground under them
+  if (!active && !swinging) {
+    for (var j = 0; j < 2; j++) {
+      var lj = G.legs[sides[j]], rs = this.rest(sides[j], p);
+      lj.plant = [rs[0], lj.groundY || 0, rs[2]];
+      lj.stance = true;
+    }
+  }
+
+  // Support centre: midpoint of the planted feet
+  var st = sides.filter(function (x) { return G.legs[x].stance; });
+  var S;
+  if (st.length === 2) {
+    S = [(G.legs.L.plant[0] + G.legs.R.plant[0]) / 2, 0, (G.legs.L.plant[2] + G.legs.R.plant[2]) / 2];
+  } else if (st.length === 1) {
+    S = G.legs[st[0]].plant.slice();
+  } else {
+    S = G.lastS;
+  }
+  G.lastS = S;
+
+  // Backward steps. Steps get slower and shorter as energy fades.
+  if (active && !swinging && st.length === 2 && G.buckle <= 0) {
+    var interval = T.GAP + (1 - G.energy) * T.GAP_EXTRA;
+    if (G.stepT > interval) {
+      // The foot furthest forward (lowest dot along the backward heading) lifts and steps back
+      var rear = null, rd = Infinity;
+      for (var q = 0; q < 2; q++) {
+        var pl = G.legs[sides[q]].plant;
+        var dd = (pl[0] - S[0]) * dir[0] + (pl[2] - S[2]) * dir[2];
+        if (dd < rd) { rd = dd; rear = sides[q]; }
+      }
+      var stride = T.STRIDE * (0.4 + 0.6 * G.energy);
+      var sg = rear === 'L' ? 1 : -1;
+      this.startSwing(G, rear, [
+        S[0] + dir[0] * stride + right[0] * sg * this.WIDTH, 0,
+        S[2] + dir[2] * stride + right[2] * sg * this.WIDTH
+      ], this.STEP_LIFT);
+      G.stepT = 0;
+      swinging = true;
+    }
+  }
+
+  // Pelvis rope follows the feet midpoint, fully on, so it moves with the steps and never sags
+  G.ropeX = (G.ropeX === undefined) ? S[0] : G.ropeX + (S[0] - G.ropeX) * Math.min(1, dt * 4);
+  G.ropeZ = (G.ropeZ === undefined) ? S[2] : G.ropeZ + (S[2] - G.ropeZ) * Math.min(1, dt * 4);
+    // Pelvis height: lower while stumbling so the knees bend and the feet can reach the ground,
+  // and follows the planted feet's height so he can step up onto boxes.
+  var footY = (G.legs.L.plant[1] + G.legs.R.plant[1]) * 0.5;
+  var ropeY = footY + (active ? 0.84 : 0.98);
+  G.ropeY = (G.ropeY === undefined) ? ropeY : G.ropeY + (ropeY - G.ropeY) * Math.min(1, dt * 5);
+  H.ropeTarget = [G.ropeX, G.ropeY, G.ropeZ];
+  H.ropeS = 1; H.gravCancel = 1; H.motorS = 1;
+
+  // Falls, only while stumbling
+  var settled = G.age > 1.5;
+  if (settled && active && (G.footAir || (G.stress || 0) > 5 || p.y < 0.5)) {
+    H.gait = null;
+    Balance.fall(H);
+    return;
+  }
+
+  B.state = active ? 'stumble' : 'stand';
+
+  // Arms reach and flail while stumbling, with less motion as energy fades
+  if (active) {
+    var flail = Math.sin(G.age * 5) * (0.2 + 0.3 * G.energy);
+    Balance.arms(H, 'L', 0.9 + flail, 0.8 + 0.3 * Math.cos(G.age * 5));
+    Balance.arms(H, 'R', 0.9 - flail, 0.8 - 0.3 * Math.cos(G.age * 5));
+  } else {
+    Balance.arms(H, 'L', 0.1, 0.3);
+    Balance.arms(H, 'R', 0.1, 0.3);
+  }
+
+  // Legs: IK from each hip to its foot. A buckled leg bends further.
+  for (var m = 0; m < 2; m++) {
+    var s2 = sides[m], lg2 = G.legs[s2];
+    var ext = (G.buckle > 0 && s2 === G.buckleSide) ? 0.7 : 0;
+    var r = this.solve(this.hip(H, s2), [lg2.cur[0], lg2.cur[1] + this.ANKLE_HEIGHT, lg2.cur[2]], p.fwd);
+    Balance.legs(H, s2, r.flex, r.bend + ext);
+  }
+};
+</script>
+<script>
+// ===================== FIRST-PERSON STYLE FOOT PLANTING, KNEE BEND, BACKWARD STUMBLE =====================
+// Stance feet step like the first-person legs: a foot steps when it falls too far behind its ideal spot,
+// lifts along an arc, and lands on the real surface. The pelvis height is set from leg reach, so the
+// knees always have bend and the feet can reach the ground.
+Gait.update = function (H, B, dt) {
+  var pel = H.byName.pelvis, hd = H.byName.head;
+  if (!pel || !hd) return;
+  var G = this.ensure(H), p = this.pose(H), T = this.BACK, sides = ['L', 'R'];
+
+  G.age = (G.age || 0) + dt;
+  G.energy = Math.max(0, (G.energy || 0) - dt * T.DECAY);
+  G.stress = Math.max(0, (G.stress || 0) - dt * 0.4);
+  G.buckle = Math.max(0, (G.buckle || 0) - dt);
+  G.stepT = (G.stepT || 0) + dt;
+  G.footAir = false;
+  if (G.dirA === undefined) G.dirA = Math.atan2(-p.fwd[0], -p.fwd[2]);
+
+  var active = G.energy > 0.02;
+  var dir = [Math.sin(G.dirA), 0, Math.cos(G.dirA)];
+  var right = [dir[2], 0, -dir[0]];
+  var stride = T.STRIDE * (0.4 + 0.6 * G.energy);
+
+  // 1. Advance swings and planted feet
+  var swinging = false;
+  for (var i = 0; i < 2; i++) {
+    var s = sides[i], lg = G.legs[s];
+    if (lg.swing) {
+      swinging = true;
+      var sw = lg.swing;
+      sw.t += dt;
+      var u = Math.min(1, sw.t / sw.dur), e = balSmooth(u);
+      lg.cur = [
+        sw.from[0] + (sw.to[0] - sw.from[0]) * e,
+        sw.from[1] + (sw.to[1] - sw.from[1]) * e + Math.sin(Math.PI * u) * sw.lift,
+        sw.from[2] + (sw.to[2] - sw.from[2]) * e
+      ];
+      if (u >= 1) {
+        var gy = this.groundAt(sw.to[0], sw.to[2]);
+        var ref = (lg.groundY === undefined) ? 0 : lg.groundY;
+        if (gy === null || Math.abs(gy - ref) > 0.25) { G.footAir = true; gy = ref; }
+        else { lg.groundY = gy; }
+        lg.swing = null;
+        lg.stance = true;
+        lg.plant = [sw.to[0], gy, sw.to[2]];
+      }
+    } else {
+      // Stance foot stays put on its planted point
+      lg.cur = lg.plant.slice();
+    }
+  }
+
+   // 2. Feet work around a point under the pelvis. A ray goes straight down from the pelvis and the
+  // feet step within reach of that spot. The midpoint of the planted feet is kept for the rope.
+  var mid = [(G.legs.L.plant[0] + G.legs.R.plant[0]) * 0.5, 0, (G.legs.L.plant[2] + G.legs.R.plant[2]) * 0.5];
+  var probe = this.groundAt(p.x, p.z);          // null means nothing under the pelvis (air)
+  var S = (probe === null) ? mid : [p.x, 0, p.z];
+  G.lastS = S;
+
+  // 3. Ideal spot for each foot, and how far each planted foot lags behind it
+  var ideal = {}, lagD = {};
+  for (var k = 0; k < 2; k++) {
+    var sd = sides[k], sg = sd === 'L' ? 1 : -1;
+    if (active) {
+      ideal[sd] = [
+                S[0] + dir[0] * stride + right[0] * sg * this.WIDTH, 0,
+               S[2] + dir[2] * stride + right[2] * sg * this.WIDTH
+      ];
+    } else {
+      var rs = this.rest(sd, p);
+      ideal[sd] = [rs[0], 0, rs[2]];
+    }
+    var pl = G.legs[sd].plant;
+    lagD[sd] = Math.hypot(pl[0] - ideal[sd][0], pl[2] - ideal[sd][2]);
+  }
+
+  // 4. Step the foot that lags most, like the first-person legs
+   var threshold = active ? stride * 0.4 : 0.12;
+  var gap = active ? 0.15 : 0.4;
+  var other = null;
+  var worst = sides[0];
+  if (lagD[sides[1]] > lagD[sides[0]]) worst = sides[1];
+  if (G.legs[worst].stance && !swinging && G.buckle <= 0 && G.stepT > gap && lagD[worst] > threshold) {
+    var otherSide = worst === 'L' ? 'R' : 'L';
+    if (G.legs[otherSide].stance) {
+      this.startSwing(G, worst, ideal[worst], this.STEP_LIFT);
+      G.stepT = 0;
+      swinging = true;
+    }
+  }
+
+  // 5. Pelvis height from leg reach: knees keep a bend and the feet can reach the ground
+  var footY = (G.legs.L.plant[1] + G.legs.R.plant[1]) * 0.5;
+  var L = this.L1 + this.L2;
+  var reach = active ? 0.8 * L : 0.92 * L;
+  var hz = 0.12;
+  var ropeY = footY + this.ANKLE_HEIGHT + Math.sqrt(Math.max(0, reach * reach - hz * hz)) + 0.06;
+  G.ropeY = (G.ropeY === undefined) ? ropeY : G.ropeY + (ropeY - G.ropeY) * Math.min(1, dt * 5);
+    G.ropeX = (G.ropeX === undefined) ? mid[0] : G.ropeX + (mid[0] - G.ropeX) * Math.min(1, dt * 4);
+  G.ropeZ = (G.ropeZ === undefined) ? mid[2] : G.ropeZ + (mid[2] - G.ropeZ) * Math.min(1, dt * 4);
+  H.ropeTarget = [G.ropeX, G.ropeY, G.ropeZ];
+  H.ropeS = active ? 0.8 : 1;
+  H.gravCancel = active ? 0.8 : 1;
+  H.motorS = 1;
+
+  // 6. Falls, only while stumbling: a foot planted over air or a big drop, stress, or a very low pelvis
+  var settled = G.age > 1.5;
+  if (settled && active && (G.footAir || (G.stress || 0) > 5 || p.y < 0.5)) {
+    H.gait = null;
+    Balance.fall(H);
+    return;
+  }
+
+  // 7. Upper body
+  B.state = active ? 'stumble' : 'stand';
+  if (active) {
+    var flail = Math.sin(G.age * 5) * (0.2 + 0.3 * G.energy);
+    Balance.arms(H, 'L', 0.9 + flail, 0.8 + 0.3 * Math.cos(G.age * 5));
+    Balance.arms(H, 'R', 0.9 - flail, 0.8 - 0.3 * Math.cos(G.age * 5));
+  } else {
+    Balance.arms(H, 'L', 0.1, 0.3);
+    Balance.arms(H, 'R', 0.1, 0.3);
+  }
+
+  // 8. Legs: IK from each hip to its foot. A buckled leg bends further.
+  for (var m = 0; m < 2; m++) {
+    var s2 = sides[m], lg2 = G.legs[s2];
+    var ext = (G.buckle > 0 && s2 === G.buckleSide) ? 0.7 : 0;
+    var r = this.solve(this.hip(H, s2), [lg2.cur[0], lg2.cur[1] + this.ANKLE_HEIGHT, lg2.cur[2]], p.fwd);
+    Balance.legs(H, s2, r.flex, r.bend + ext);
+  }
+};
+</script>
+<script>
+// ===================== UPRIGHT UPPER BODY WHILE STUMBLING =====================
+// Adds a world-space upright motor to the chest and head while he is stumbling or standing.
+// The spine joints only hold segments relative to each other, so without this the upper body
+// falls forward when the pelvis is held low.
+(function () {
+  var _ahf3 = applyHumanForces;
+  applyHumanForces = function (H, h) {
+    _ahf3(H, h);
+    if (H.dead || !H.gait || !H.bal) return;
+    if (H.bal.state !== 'stumble' && H.bal.state !== 'stand') return;
+
+    if (!H._upMotors) {
+      H._upMotors = {};
+      ['chest', 'head'].forEach(function (name) {
+        var b = H.byName[name];
+        if (!b) return;
+        var I = (b.Il[0] + b.Il[1] + b.Il[2]) / 3;
+        H._upMotors[name] = {
+          a: null, b: b, target: [1, 0, 0, 0],
+          kp: I * 100, kd: 2 * 0.8 * I * 10, maxT: 200
+        };
+      });
+    }
+    for (var key in H._upMotors) {
+      var m = H._upMotors[key];
+      if (H.byName[key] === m.b) applyMotor(m, 1, h);
+    }
+  };
+})();
+</script>
+<script>// ===================== REALISTIC STUMBLE + EXIT WOUNDS (patch) =====================
+// Paste this as a new <script> block at the very end of the page, after the last existing script.
+// It replaces Gait.update / Gait.onHit / Gait.hitLeg / Gait.groundAt and wraps Humans.hit.
+//
+// STUMBLE MODEL
+//  - The body is a point mass (linear inverted pendulum) driven by the bullet's push.
+//  - Planted feet never slide. A foot only moves when it is picked up for a step.
+//  - A step is triggered when the capture point (where the body would come to rest) leaves the support.
+//    The trailing foot swings to a point ahead of the capture point, accounting for the time the swing takes.
+//  - Hits to a leg buckle it; badly damaged legs collapse. Falls happen when no valid step exists,
+//    the step needed is beyond reach, a foot lands on air / a ledge, or stress from repeated hits piles up.
+//  - Pelvis height is solved from the leg reach, so knees bend deeper in a stumble and straighten at rest.
+//
+// EXIT WOUNDS
+//  - Each hit casts through the same limb to find where the bullet leaves. If it exits it leaves a bigger
+//    wound decal, a forward blood spray, a bleeding wound entry and dripping rivulets, same as entry wounds.
+
+(function () {
+  var W = Math.sqrt(9.8 / 0.98), W2 = W * W;
+  var K = {
+    MAX_STEP: 0.42,      // 0.78 longest step the legs can make (m)
+    MIN_STEP: 0.12,
+    FOOT_HALF: 0.09,     // half foot length (support extent along facing)
+    GAP: 0.1,            // minimum seconds between steps
+    CP_GAIN: 0.9,        // how much of the predicted capture point the step covers
+    PUSH_BASE: 0.45,     // m/s added by any hit
+    PUSH_PER_DMG: 0.014, // extra m/s per point of effective damage
+    MAX_SPEED: 2.6,
+    DAMP_IN: 2.2,        // velocity damping while the body is over its feet
+    DAMP_OUT: 0.5,
+    IDLE_REACH: 0.99,    // leg reach fraction when standing
+    BUCKLE: 0.7
+  };
+
+  function dot2(ax, az, bx, bz) { return ax * bx + az * bz; }
+
+  // ---------- state ----------
+  var _ensure = Gait.ensure;
+  Gait.ensure = function (H) {
+    var G = _ensure.call(this, H);
+    if (!G.com) {
+      var pel = H.byName.pelvis;
+      G.com = { x: pel.x[0], z: pel.x[2], vx: 0, vz: 0 };
+      G.stress = 0; G.stepT = 1; G.age = 0; G.steps = 0; G.lostT = 0; G.idleT = 0;
+      G.ropeY = undefined; G.leanA = 0; G.armL = [0.1, 0.3]; G.armR = [0.1, 0.3];
+      G.tripped = false; G.footAir = false; G.buckle = 0; G.buckleSide = null;
+    }
+    return G;
+  };
+
+  // Surface height under a point (null = air). The static mesh list is cached.
+  var _gRay = new THREE.Raycaster(), _gList = null, _gLen = -1, _gO = new THREE.Vector3(), _gD = new THREE.Vector3(0, -1, 0);
+  Gait.groundAt = function (x, z) {
+    if (!_gList || _gLen !== GameMap.solids.length) {
+      _gList = GameMap.solids.filter(function (m) { return m.isMesh && !m.userData.target && !m.userData.decal; });
+      _gLen = GameMap.solids.length;
+    }
+    _gO.set(x, 1.5, z);
+    _gRay.set(_gO, _gD);
+    _gRay.near = 0; _gRay.far = 2;
+    var hits = _gRay.intersectObjects(_gList, false);
+    return hits.length ? hits[0].point.y : null;
+  };
+
+  function beginStep(G, s, to, dur, lift) {
+    var lg = G.legs[s];
+    var gy = Gait.groundAt(to[0], to[2]);
+    var ref = lg.plant[1];
+    var sw = { t: 0, dur: dur, from: lg.cur.slice(), lift: lift, air: false, trip: false };
+    if (gy === null) { sw.air = true; gy = ref; }
+    else if (gy - ref > 0.32 || ref - gy > 0.4) { sw.trip = true; gy = ref; }   // can't clear it / big drop
+    sw.to = [to[0], gy, to[2]];
+    lg.swing = sw; lg.stance = false;
+  }
+
+  function doFall(H, G, c, pel) {
+    var m = pel.m;
+    applyImpulse(PHYS.ground, pel, [0, 0, 0], [0, 0, 0], [c.vx * m * 0.5, 0, c.vz * m * 0.5]);
+    var ch = H.byName.chest;
+    if (ch) applyImpulse(PHYS.ground, ch, [0, 0, 0], [0, 0, 0], [c.vx * ch.m * 0.4, 0, c.vz * ch.m * 0.4]);
+    H.gait = null;
+    Balance.fall(H);
+  }
+
+  // ---------- main update ----------
+  Gait.update = function (H, B, dt) {
+    var pel = H.byName.pelvis, hd = H.byName.head;
+    if (!pel || !hd) return;
+    if (!H.byName.thL || !H.byName.thR || !H.byName.shL || !H.byName.shR || !H.byName.ftL || !H.byName.ftR) {
+      H.gait = null; Balance.fall(H); return;      // a leg is gone
+    }
+    dt = Math.min(dt, 0.05);
+    if (dt <= 0) return;
+
+    var G = this.ensure(H), p = this.pose(H), sides = ['L', 'R'], i;
+    var c = G.com, fx = p.fwd[0], fz = p.fwd[2], rx = p.right[0], rz = p.right[2];
+    G.age += dt; G.stepT += dt;
+    G.stress = Math.max(0, G.stress - dt * 0.5);
+    G.buckle = Math.max(0, G.buckle - dt);
+    G.footAir = false;
+
+    // 1. Advance swings
+    var swinging = false;
+    for (i = 0; i < 2; i++) {
+      var lg = G.legs[sides[i]];
+      if (lg.swing) {
+        swinging = true;
+        var sw = lg.swing;
+        sw.t += dt;
+        var u = Math.min(1, sw.t / sw.dur), e = balSmooth(u);
+        lg.cur = [
+          sw.from[0] + (sw.to[0] - sw.from[0]) * e,
+          sw.from[1] + (sw.to[1] - sw.from[1]) * e + Math.sin(Math.PI * u) * sw.lift,
+          sw.from[2] + (sw.to[2] - sw.from[2]) * e
+        ];
+        if (sw.trip && u > 0.55) { G.tripped = true; }
+        if (u >= 1) {
+          if (sw.air) G.footAir = true;
+          lg.groundY = sw.to[1];
+          lg.plant = sw.to.slice();
+          lg.cur = sw.to.slice();
+          lg.swing = null; lg.stance = true;
+          G.steps++;
+        }
+      } else {
+        lg.cur = lg.plant.slice();               // planted feet never move
+      }
+    }
+    swinging = !!(G.legs.L.swing || G.legs.R.swing);
+
+    // 2. Support (weight-bearing planted feet; a buckled leg does not bear weight)
+    var supp = [];
+    for (i = 0; i < 2; i++) {
+      var l2 = G.legs[sides[i]];
+      if (!l2.swing && !(G.buckle > 0 && sides[i] === G.buckleSide)) supp.push(l2.plant);
+    }
+    var sx, sz, extF, extR;
+    if (supp.length === 2) {
+      sx = (supp[0][0] + supp[1][0]) / 2; sz = (supp[0][2] + supp[1][2]) / 2;
+      var ddx = supp[0][0] - supp[1][0], ddz = supp[0][2] - supp[1][2];
+      extF = Math.abs(dot2(ddx, ddz, fx, fz)) / 2 + K.FOOT_HALF;
+      extR = Math.abs(dot2(ddx, ddz, rx, rz)) / 2 + 0.04;
+    } else if (supp.length === 1) {
+      sx = supp[0][0]; sz = supp[0][2]; extF = K.FOOT_HALF; extR = 0.05;
+    } else {
+      sx = G.lastS[0]; sz = G.lastS[2]; extF = 0; extR = 0;
+    }
+    G.lastS = [sx, 0, sz];
+
+    // 3. Body dynamics: linear inverted pendulum, centre of pressure limited to the support
+    var ox = c.x - sx, oz = c.z - sz;
+    var of = dot2(ox, oz, fx, fz), orr = dot2(ox, oz, rx, rz);
+    var ef = of - Math.max(-extF, Math.min(extF, of));
+    var er = orr - Math.max(-extR, Math.min(extR, orr));
+    c.vx += W2 * (ef * fx + er * rx) * dt;
+    c.vz += W2 * (ef * fz + er * rz) * dt;
+    var inside = (ef === 0 && er === 0);
+    var dk = Math.exp(-dt * (inside ? K.DAMP_IN : K.DAMP_OUT));
+    c.vx *= dk; c.vz *= dk;
+    var vr = dot2(c.vx, c.vz, rx, rz), lk = Math.min(1, dt * 4);   // sideways motion is absorbed quickly
+    c.vx -= rx * vr * lk; c.vz -= rz * vr * lk;
+    c.x += c.vx * dt; c.z += c.vz * dt;
+    var speed = Math.hypot(c.vx, c.vz);
+
+    // 4. Capture point and step decision
+    var cpx = c.x + c.vx / W, cpz = c.z + c.vz / W;
+    var cF = dot2(cpx - sx, cpz - sz, fx, fz);
+    var need = !swinging && Math.abs(cF) > extF + 0.02;
+    var active = speed > 0.1 || swinging || G.buckle > 0 || need;
+
+    if (need && G.stepT > K.GAP) {
+      var dirS = cF >= 0 ? 1 : -1, pick = null, pickScore = Infinity;
+      for (i = 0; i < 2; i++) {
+        var s = sides[i], other = G.legs[sides[1 - i]], me = G.legs[s];
+        // the other foot must be planted and able to take weight
+        if (other.swing || (G.buckle > 0 && sides[1 - i] === G.buckleSide)) continue;
+        var score = dot2(me.plant[0], me.plant[2], fx, fz) * dirS;
+        if (score < pickScore) { pickScore = score; pick = s; }
+      }
+      if (pick) {
+        var stance = G.legs[pick === 'L' ? 'R' : 'L'].plant;
+        var sgS = pick === 'L' ? 1 : -1;
+        var dur = Math.max(0.22, Math.min(0.42, 0.2 + 0.22 * Math.abs(cF)));
+        if (G.buckle > 0 && pick === G.buckleSide) dur *= 1.4;
+        // capture point grows while the foot is in the air, so aim ahead of it
+        var grow = Math.exp(W * dur * 0.45) * K.CP_GAIN;
+        var relF = dot2(cpx - stance[0], cpz - stance[2], fx, fz) * grow;
+        relF = Math.max(-K.MAX_STEP, Math.min(K.MAX_STEP, relF));
+        if (Math.abs(relF) < K.MIN_STEP) relF = dirS * K.MIN_STEP;
+        var lat = sgS * 2 * this.WIDTH;
+        var to = [stance[0] + fx * relF + rx * lat, 0, stance[2] + fz * relF + rz * lat];
+        beginStep(G, pick, to, dur, Math.min(0.15, 0.04 + 0.1 * Math.abs(relF)));
+        G.stepT = 0;
+        swinging = true;
+      }
+    }
+
+    // 5. Idle: weight settles over the feet, then the feet square up
+    if (!active) {
+      G.idleT += dt;
+      var ek = Math.min(1, dt * 2);
+      c.x += (sx - c.x) * ek; c.z += (sz - c.z) * ek;
+      c.vx = 0; c.vz = 0;
+      if (supp.length === 2 && !swinging && G.stepT > 0.25) {
+        var worst = null, wl = 0.1;
+        for (i = 0; i < 2; i++) {
+          var sg = sides[i] === 'L' ? 1 : -1, pl = G.legs[sides[i]].plant;
+          var ix = c.x + rx * sg * this.WIDTH, iz = c.z + rz * sg * this.WIDTH;
+          var lag = Math.hypot(pl[0] - ix, pl[2] - iz);
+          if (lag > wl) { wl = lag; worst = { s: sides[i], to: [ix, 0, iz] }; }
+        }
+        if (worst) { beginStep(G, worst.s, worst.to, 0.32, 0.05); G.stepT = 0; swinging = true; }
+      }
+    } else G.idleT = 0;
+
+    // 6. Losing balance for good: nothing can take weight, or the step needed is out of reach
+    if ((need && !swinging) || Math.abs(cF) > K.MAX_STEP + extF + 0.25) G.lostT += dt;
+    else G.lostT = Math.max(0, G.lostT - dt * 2);
+
+    if (G.tripped || G.footAir || G.stress > 5 || G.lostT > 0.4 || (G.age > 0.8 && p.y < 0.5)) {
+      doFall(H, G, c, pel);
+      return;
+    }
+
+    // 7. Pelvis height from leg reach (knees bend more in a stumble), carried by the rope at the body position
+    var L = this.L1 + this.L2;
+    var reach = L * (K.IDLE_REACH - 0.11 * Math.min(1, speed / 1.6) - (G.buckle > 0 ? 0.05 : 0));
+    var ty = Infinity;
+    for (i = 0; i < 2; i++) {
+      var lg3 = G.legs[sides[i]];
+      if (lg3.swing || (G.buckle > 0 && sides[i] === G.buckleSide)) continue;
+      var sg3 = sides[i] === 'L' ? 1 : -1;
+      var hx = c.x + rx * sg3 * 0.1 - lg3.plant[0], hz = c.z + rz * sg3 * 0.1 - lg3.plant[2];
+      var yy = lg3.plant[1] + this.ANKLE_HEIGHT + Math.sqrt(Math.max(0.04, reach * reach - (hx * hx + hz * hz))) + 0.06;
+      if (yy < ty) ty = yy;
+    }
+    if (ty === Infinity) ty = (G.ropeY === undefined ? 0.9 : G.ropeY) - 0.02;   // no support: sinking
+    ty = Math.max(0.55, ty);
+    G.ropeY = (G.ropeY === undefined) ? ty : G.ropeY + (ty - G.ropeY) * Math.min(1, dt * 10);
+    // the rope lags the target by about 0.18 s of velocity, so lead it
+    H.ropeTarget = [c.x + c.vx * 0.18, G.ropeY, c.z + c.vz * 0.18];
+    H.ropeS = 1; H.gravCancel = 1; H.motorS = 1;
+
+    // 8. Upper body: arms out for balance, torso leans with the motion
+    B.state = active ? 'stumble' : 'stand';
+    var sN = Math.min(1, speed / 1.4);
+    var act = active ? Math.max(0.35, sN) : 0;
+    if (H.holds && H.holds.length) act *= 0.5;
+    var fl = Math.sin(G.age * 6) * 0.25 * act;
+    var tL0 = 0.1 + (0.95 + fl) * act, tL1 = 0.3 + 0.55 * act;
+    var tR0 = 0.1 + (0.95 - fl) * act, tR1 = 0.3 + 0.55 * act * (1 - fl);
+    var ak = Math.min(1, dt * 7);
+    G.armL[0] += (tL0 - G.armL[0]) * ak; G.armL[1] += (tL1 - G.armL[1]) * ak;
+    G.armR[0] += (tR0 - G.armR[0]) * ak; G.armR[1] += (tR1 - G.armR[1]) * ak;
+    Balance.arms(H, 'L', G.armL[0], G.armL[1]);
+    Balance.arms(H, 'R', G.armR[0], G.armR[1]);
+
+    var um = H._upMotors;
+    if (um && um.chest && um.head) {
+      var la = active ? Math.min(0.22, speed * 0.12) : 0;
+      G.leanA += (la - G.leanA) * Math.min(1, dt * 6);
+      var ax = speed > 1e-3 ? [c.vz / speed, 0, -c.vx / speed] : [1, 0, 0];
+      um.chest.target = Qt.fromAxis(ax, G.leanA);
+      um.head.target = Qt.fromAxis(ax, G.leanA * 0.5);
+    }
+
+    // 9. Legs: IK from each hip to its foot. A buckled leg folds.
+    for (i = 0; i < 2; i++) {
+      var s2 = sides[i], lg2 = G.legs[s2];
+      var ext = (G.buckle > 0 && s2 === G.buckleSide) ? 0.8 * Math.min(1, G.buckle / 0.25) : 0;
+      var lift = ext > 0 ? 0.04 : 0;
+      var r = this.solve(this.hip(H, s2), [lg2.cur[0], lg2.cur[1] + this.ANKLE_HEIGHT + lift, lg2.cur[2]], p.fwd);
+      Balance.legs(H, s2, r.flex, r.bend + ext);
+    }
+  };
+
+  // ---------- hits ----------
+  Gait.onHit = function (H, part, limb) {
+    var B = Balance.get(H);
+    if (B.state !== 'stand' && B.state !== 'stumble') return;
+    var G = this.ensure(H), info = Gait._lastHit || {};
+    var eff = info.eff || 20, d = info.dir;
+    var isLeg = this.LEG_OK(part);
+
+    // Push along the bullet's horizontal direction
+    var mag = (K.PUSH_BASE + eff * K.PUSH_PER_DMG) * (isLeg ? 0.45 : 1);
+    if (d) {
+      var hl = Math.hypot(d.x, d.z);
+      if (hl > 1e-4) {
+        G.com.vx += d.x / hl * mag;
+        G.com.vz += d.z / hl * mag;
+        var sp = Math.hypot(G.com.vx, G.com.vz);
+        if (sp > K.MAX_SPEED) { G.com.vx *= K.MAX_SPEED / sp; G.com.vz *= K.MAX_SPEED / sp; }
+      }
+    }
+    G.stress += 0.5 + eff * 0.012;
+    G.steps = 0;
+    B.state = 'stumble';
+
+    if (isLeg && limb) {
+      var def = LIMBS[limb];
+      var frac = def ? H.limbHp[limb] / def.hp : 1;
+      if (frac < 0.45 && Math.random() < 0.65) {       // badly hurt leg gives out
+        doFall(H, G, G.com, H.byName.pelvis);
+        return;
+      }
+      this.hitLeg(H, limb.slice(-1), false);
+    }
+  };
+
+  Gait.hitLeg = function (H, side, trip) {
+    var B = Balance.get(H);
+    if (trip) { H.gait = null; Balance.fall(H); return; }
+    var G = this.ensure(H);
+    G.buckle = K.BUCKLE;
+    G.buckleSide = side;
+    G.stress += 0.4;
+    B.state = 'stumble';
+  };
+
+  // ---------- Humans.hit wrapper: remembers the shot for the stumble, adds the exit wound ----------
+  var PEN = { pistol: 0.5, rifle: 0.8, shotgun: 0.22, smg: 0.45 };   // how far a round travels through a body (m)
+  var _exRay = new THREE.Raycaster();
+  var ARTERIAL_PARTS = { thigh: 1, upperArm: 1, neck: 1, chest: 1 };
+
+  // Looks for where the round leaves the limb it entered. Returns null if it stays inside.
+  function findExit(H, object, point, dir, weapon) {
+    var limb = object.userData.limb;
+    if (!limb) return null;
+    if (weapon && weapon.pellets > 1 && Math.random() > 0.35) return null;   // most pellets stay in
+    var pen = PEN[weapon && weapon.model] || 0.4;
+    var meshes = [];
+    for (var i = 0; i < H.parts.length; i++) {
+      var m = H.parts[i];
+      if (m.userData.limb === limb && m.parent && m.parent.visible) meshes.push(m);
+    }
+    if (!meshes.length) return null;
+    var Ls = 0.9;
+    var o = new THREE.Vector3(point.x + dir.x * Ls, point.y + dir.y * Ls, point.z + dir.z * Ls);
+    _exRay.set(o, new THREE.Vector3(-dir.x, -dir.y, -dir.z));
+    _exRay.near = 0; _exRay.far = Ls - 0.03;
+    var hits = _exRay.intersectObjects(meshes, false);
+    if (!hits.length) return null;
+    var h = hits[0];
+    var path = Ls - h.distance;
+    if (path < 0.04 || path > pen) return null;
+    var n = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dir.clone();
+    if (n.dot(dir) < 0) n.negate();
+    return { obj: h.object, point: h.point.clone(), normal: n, limb: limb, part: h.object.userData.part, path: path };
+  }
+
+  function applyExit(H, ex, dir, dmg, eff, weapon) {
+    var B = H.byName[ex.limb];
+    if (!B || H.cut[ex.limb] || !ex.obj.parent) return;
+    var ws = (weapon && weapon.woundScale) || 1;
+    var xeff = eff * 1.3;
+    var size = (0.09 + xeff * 0.0016) * ws * 1.6;
+    var spin = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+    Decals.addDecal(ex.obj, ex.point, ex.normal, Decals.tex.wound, size, { opacity: 0.98, tangent: spin });
+
+    // Spray travels on in the bullet's direction
+    Decals.spray(ex.point, dir, 12 + Math.floor(xeff * 0.25), xeff);
+
+    // Bleeds like the entry wound (pulsing when arterial, oozing otherwise)
+    var pt = [ex.point.x, ex.point.y, ex.point.z];
+    var lp = Qt.rot(Qt.conj(B.q), Vx.sub(pt, B.x));
+    var ld = Qt.rot(Qt.conj(B.q), [ex.normal.x, ex.normal.y, ex.normal.z]);
+    var arterial = xeff > 90 || (xeff > 25 && ARTERIAL_PARTS[ex.part]);
+    if (H.wounds.length > 60) H.wounds.shift();
+    H.wounds.push({ b: B, lp: lp, ld: ld, arterial: !!arterial, phase: Math.random(), bleedT: 25, drip: 0 });
+
+    // Dripping down the body from the exit point
+    Rivulets.spawn(H, ex.part, ex.obj, ex.point, dir, dmg * 1.8, weapon);
+  }
+
+  var _hit = Humans.hit;
+  Humans.hit = function (H, part, object, point, dir, dmg, weapon, normal) {
+    var eff = dmg * (Humans.mult[part] || 1);
+    Gait._lastHit = { dir: dir, eff: eff };
+
+    // Find the exit before the hit moves the body or removes any limb
+    var ex = null;
+    try { ex = findExit(H, object, point, dir, weapon); } catch (e) { ex = null; }
+
+    var res = _hit.apply(this, arguments);
+
+    if (ex) {
+      try { applyExit(H, ex, dir, dmg, eff, weapon); }
+      catch (e2) { if (!H._exitErr) { H._exitErr = true; console.error('Exit wound error:', e2); } }
+    }
+    return res;
+  };
+})();</script>
+<script>// ===================== DEFORMING WOUNDS: carved holes, red flesh, line-of-holes cuts =====================
+// Paste as the LAST <script> block, after the stumble/exit patch.
+// Every capsule limb (stomach, chest, neck, arms, forearms, thighs, shins) gets a dense skin mesh whose
+// vertices are really pushed in by each shot. Deep holes turn red, through-and-through shots open a hole all the
+// way through, and holes in a line around a limb cut it in two (a new rigid body is created for the loose piece).
+(function () {
+  'use strict';
+  if (window.__deformWounds) return;
+  window.__deformWounds = true;
+
+  // ---------- tuning ----------
+  var K = {
+    CELL: 0.015,                                   // target mesh cell size in metres (smaller = finer holes, more vertices)
+    DEPTH:  { pistol: 0.085, rifle: 0.19, shotgun: 0.040, smg: 0.075 },   // bore depth in metres at full energy
+    RADIUS: { pistol: 0.019, rifle: 0.024, shotgun: 0.015, smg: 0.017 },  // hole radius in metres
+    EXIT_R: 1.5,                                   // exit holes are this much wider
+    EXIT_RAG: 0.35,                                // exit hole edge raggedness
+    CUT_BAND: 0.03,                                // holes within this height of each other count as one line
+    CUT_COVER: 0.80,                               // fraction of the limb's circumference the holes must cover to cut it
+    COVER_MUL: 1.5,                                // how much wider than the hole its weakened rim counts
+    SKIN_DEEP: 0.035                               // depth (m) at which flesh reaches full dark red
+  };
+  var DEFORM = /^(abdomen|chest|neck|ua[LR]|fa[LR]|th[LR]|sh[LR])$/;
+  var VITAL = { chest: 1, abdomen: 1, neck: 1 };
+  var BLOOD = [0.46, 0.035, 0.045], DEEP = [0.27, 0.0, 0.012], FLESH = [0.40, 0.04, 0.05];
+
+  function clamp(x, a, b) { return x < a ? a : (x > b ? b : x); }
+  function smooth(x) { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); }
+  function wkey(weapon) {
+    if (weapon && window.WEAPON_DEFS) for (var k in WEAPON_DEFS) if (WEAPON_DEFS[k] === weapon) return k;
+    return 'pistol';
+  }
+
+  var frontMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 });
+  var backMat = new THREE.MeshStandardMaterial({ color: 0x5c0709, emissive: 0x1c0204, roughness: 0.45, metalness: 0, side: THREE.BackSide });
+
+  // ---------- capsule skin grid ----------
+  // rows run from the bottom pole to the top pole along local Y, S vertices per ring
+  function makeSkin(body, L, r, baseCol, part) {
+    var S = clamp(Math.round(2 * Math.PI * r / K.CELL), 20, 56);
+    var nMid = Math.max(2, Math.round(L / K.CELL));
+    var nCap = Math.max(4, Math.round(Math.PI * r / 2 / K.CELL));
+    var rows = [], i, th;
+    for (i = 0; i < nCap; i++) { th = -Math.PI / 2 + (i / nCap) * (Math.PI / 2); rows.push([-L / 2 + r * Math.sin(th), Math.max(1e-4, r * Math.cos(th)), Math.sin(th), Math.cos(th)]); }
+    for (i = 0; i <= nMid; i++) rows.push([-L / 2 + L * i / nMid, r, 0, 1]);
+    for (i = 1; i <= nCap; i++) { th = (i / nCap) * (Math.PI / 2); rows.push([L / 2 + r * Math.sin(th), Math.max(1e-4, r * Math.cos(th)), Math.sin(th), Math.cos(th)]); }
+    var R = rows.length, N = R * S;
+    var sk = {
+      body: body, L: L, r: r, S: S, R: R, part: part, base: baseCol,
+      rest: new Float32Array(N * 3), pos: new Float32Array(N * 3), nrest: new Float32Array(N * 3),
+      col: new Float32Array(N * 3), wet: new Float32Array(N), dep: new Float32Array(N),
+      rowY: new Float32Array(R), dead: new Uint8Array((R - 1) * S),
+      ay0: -L / 2, ay1: L / 2, e0: -L / 2 - r, e1: L / 2 + r,
+      r0: 0, r1: R - 1, capLo: false, capHi: false, capY0: 0, capY1: 0,
+      wounds: [], mesh: null, back: null, geo: null
+    };
+    for (i = 0; i < R; i++) {
+      sk.rowY[i] = rows[i][0];
+      for (var j = 0; j < S; j++) {
+        var ph = j / S * Math.PI * 2, c = Math.cos(ph), s = Math.sin(ph), v = (i * S + j) * 3;
+        sk.rest[v] = rows[i][1] * c; sk.rest[v + 1] = rows[i][0]; sk.rest[v + 2] = rows[i][1] * s;
+        sk.nrest[v] = rows[i][3] * c; sk.nrest[v + 1] = rows[i][2]; sk.nrest[v + 2] = rows[i][3] * s;
+      }
+    }
+    resetSkinData(sk);
+    return sk;
+  }
+
+  function resetSkinData(sk) {
+    sk.pos.set(sk.rest);
+    sk.wet.fill(0); sk.dep.fill(0); sk.dead.fill(0);
+    for (var v = 0; v < sk.R * sk.S; v++) recolor(sk, v);
+    sk.wounds.length = 0;
+    sk.r0 = 0; sk.r1 = sk.R - 1; sk.capLo = false; sk.capHi = false;
+  }
+
+  function recolor(sk, v) {
+    var b = sk.base, w = sk.wet[v], d = clamp(sk.dep[v] / K.SKIN_DEEP, 0, 1) * (w > 0 ? 1 : 0);
+    var o = v * 3;
+    for (var k = 0; k < 3; k++) {
+      var c = b[k] * (1 - w) + BLOOD[k] * w;
+      c = c * (1 - d * 0.75) + DEEP[k] * d * 0.75;
+      sk.col[o + k] = c;
+    }
+  }
+
+  // Rebuild the actual three.js geometry from the grid: live quads in [r0, r1] plus flat red cut caps
+  function rebuildGeo(sk, fresh) {
+    var S = sk.S, R = sk.R, nBase = R * S, i, j, k;
+    var total = nBase + 2 * (S + 1);
+    var pos = new Float32Array(total * 3), col = new Float32Array(total * 3);
+    pos.set(sk.pos); col.set(sk.col);
+    var idx = [];
+    for (i = sk.r0; i < sk.r1; i++) {
+      for (j = 0; j < S; j++) {
+        if (sk.dead[i * S + j]) continue;
+        var a = i * S + j, b = i * S + (j + 1) % S, c = (i + 1) * S + j, d = (i + 1) * S + (j + 1) % S;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+    function cap(base, row, y, flip) {
+      var cx = 0, cz = 0;
+      for (j = 0; j < S; j++) {
+        var s = (row * S + j) * 3, o = (base + j) * 3;
+        pos[o] = sk.pos[s]; pos[o + 1] = y; pos[o + 2] = sk.pos[s + 2];
+        col[o] = FLESH[0]; col[o + 1] = FLESH[1]; col[o + 2] = FLESH[2];
+        cx += sk.pos[s]; cz += sk.pos[s + 2];
+      }
+      var co = (base + S) * 3;
+      pos[co] = cx / S; pos[co + 1] = y; pos[co + 2] = cz / S;
+      col[co] = DEEP[0] + 0.12; col[co + 1] = DEEP[1]; col[co + 2] = DEEP[2] + 0.01;
+      for (j = 0; j < S; j++) {
+        var p = base + j, q = base + (j + 1) % S;
+        if (flip) idx.push(base + S, q, p); else idx.push(base + S, p, q);
+      }
+    }
+    if (sk.capLo) cap(nBase, sk.r0, sk.capY0, false);
+    if (sk.capHi) cap(nBase + S + 1, sk.r1, sk.capY1, true);
+
+    var geo = sk.geo;
+    if (!geo || fresh) {
+      geo = new THREE.BufferGeometry();
+      sk.geo = geo;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    geo.computeBoundingBox();
+    if (sk.mesh) sk.mesh.geometry = geo;
+    if (sk.back) sk.back.geometry = geo;
+  }
+
+  // distance from p (inside or on the skin) along unit d until it leaves this limb's capsule
+  function leave(sk, p, d) {
+    var r = sk.r, A = d[0] * d[0] + d[2] * d[2], t, cy = d[1] > 0 ? sk.ay1 : sk.ay0;
+    if (A > 1e-9) {
+      var B = p[0] * d[0] + p[2] * d[2], C = p[0] * p[0] + p[2] * p[2] - r * r, disc = B * B - A * C;
+      if (disc < 0) return 0;
+      t = (-B + Math.sqrt(disc)) / A;
+      var y = p[1] + t * d[1];
+      if (y >= sk.ay0 && y <= sk.ay1) return Math.max(0, t);
+      cy = y > sk.ay1 ? sk.ay1 : sk.ay0;
+    }
+    var ox = p[0], oy = p[1] - cy, oz = p[2];
+    var Bs = ox * d[0] + oy * d[1] + oz * d[2], Cs = ox * ox + oy * oy + oz * oz - r * r;
+    var ds = Bs * Bs - Cs;
+    return Math.max(0, -Bs + Math.sqrt(Math.max(ds, 0)));
+  }
+
+  // Push the skin in along the shot. dirSign +1: entry crater (moves along a), -1: exit crater (moves back along -a).
+  // Returns the vertex indices at the bottom of the crater.
+  function carve(sk, e, a, R, D, dirSign, rag, seed) {
+    var S = sk.S, floor = [], dd = [a[0] * dirSign, a[1] * dirSign, a[2] * dirSign];
+    var u = Math.abs(a[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    var ux = u[1] * a[2] - u[2] * a[1], uy = u[2] * a[0] - u[0] * a[2], uz = u[0] * a[1] - u[1] * a[0];
+    var ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    var wx = a[1] * uz - a[2] * uy, wy = a[2] * ux - a[0] * uz, wz = a[0] * uy - a[1] * ux;
+    var pp = [0, 0, 0];
+    var r0 = Math.max(0, sk.r0), r1 = Math.min(sk.R - 1, sk.r1);
+    for (var i = r0; i <= r1; i++) {
+      for (var j = 0; j < S; j++) {
+        var v = i * S + j, o = v * 3;
+        var nd = sk.nrest[o] * a[0] + sk.nrest[o + 1] * a[1] + sk.nrest[o + 2] * a[2];
+        if (dirSign * nd > -0.05) continue;
+        var rx = sk.pos[o] - e[0], ry = sk.pos[o + 1] - e[1], rz = sk.pos[o + 2] - e[2];
+        var t = rx * a[0] + ry * a[1] + rz * a[2];
+        if (Math.abs(t) > R * 1.5 + 0.012) continue;
+        var px = rx - a[0] * t, py = ry - a[1] * t, pz = rz - a[2] * t;
+        var rho = Math.sqrt(px * px + py * py + pz * pz);
+        if (rho > R * 2.1) continue;
+        var ang = Math.atan2(px * wx + py * wy + pz * wz, px * ux + py * uy + pz * uz);
+        var Rv = R * (1 + rag * (0.5 * Math.sin(3 * ang + seed) + 0.3 * Math.sin(5 * ang + seed * 1.7) + 0.2 * Math.sin(8 * ang + seed * 2.3)));
+        var uu = rho / Rv;
+        if (uu < 1) {
+          var f = uu < 0.5 ? 1 : 1 - smooth((uu - 0.5) / 0.5);
+          pp[0] = sk.pos[o]; pp[1] = sk.pos[o + 1]; pp[2] = sk.pos[o + 2];
+          var room = leave(sk, pp, dd) * 0.88;
+          var d = Math.min(D, room) * f;
+          if (d > 0) {
+            sk.pos[o] += dd[0] * d; sk.pos[o + 1] += dd[1] * d; sk.pos[o + 2] += dd[2] * d;
+            sk.dep[v] += d;
+          }
+          sk.wet[v] = Math.max(sk.wet[v], 0.6 + 0.4 * f);
+          if (uu < 0.75) floor.push(v);
+        } else if (uu < 1.7) {
+          sk.wet[v] = Math.max(sk.wet[v], 0.55 * (1 - (uu - 1) / 0.7));
+        }
+        recolor(sk, v);
+      }
+    }
+    return floor;
+  }
+
+  // Open a real hole: kill the quads at the bottom of a through-and-through crater
+  function openHole(sk, floor, e) {
+    var S = sk.S, set = {}, n, i, j;
+    for (n = 0; n < floor.length; n++) set[floor[n]] = true;
+    var best = -1, bd = 1e9;
+    for (n = 0; n < floor.length; n++) {
+      var o = floor[n] * 3, dx = sk.pos[o] - e[0], dy = sk.pos[o + 1] - e[1], dz = sk.pos[o + 2] - e[2];
+      var dl = dx * dx + dy * dy + dz * dz;
+      if (dl < bd) { bd = dl; best = floor[n]; }
+    }
+    for (i = sk.r0; i < sk.r1; i++) {
+      for (j = 0; j < S; j++) {
+        var a = i * S + j, b = i * S + (j + 1) % S, c = (i + 1) * S + j, d = (i + 1) * S + (j + 1) % S;
+        if (set[a] && set[b] && set[c] && set[d]) sk.dead[i * S + j] = 1;
+      }
+    }
+    if (best >= 0) {
+      var bi = Math.floor(best / S), bj = best % S;
+      for (var di = -1; di <= 0; di++) for (var dj = -1; dj <= 0; dj++) {
+        var qi = bi + di, qj = (bj + dj + S) % S;
+        if (qi >= sk.r0 && qi < sk.r1) sk.dead[qi * S + qj] = 1;
+      }
+    }
+  }
+
+  // ---------- holes in a line: does a ring of wounds cover enough of the limb to cut it? ----------
+  function findCut(sk) {
+    var W = sk.wounds, S = sk.S;
+    if (W.length < 2) return -1;
+    for (var i = 0; i < W.length; i++) {
+      var yi = W[i].y, ivs = [];
+      for (var n = 0; n < W.length; n++) {
+        var w = W[n];
+        if (Math.abs(w.y - yi) > K.CUT_BAND) continue;
+        var yy = Math.abs(w.y - (sk.ay0 + sk.ay1) / 2) - (sk.ay1 - sk.ay0) / 2;
+        var rEff = yy > 0 ? Math.sqrt(Math.max(sk.r * sk.r - yy * yy, 1e-4)) : sk.r;
+        var half = Math.min(Math.PI, w.R * K.COVER_MUL / Math.max(rEff, 0.02));
+        var lo = w.ang - half, hi = w.ang + half;
+        ivs.push([lo, hi]);
+      }
+      if (ivs.length < 2) continue;
+      // union of angular intervals on the circle
+      var TW = Math.PI * 2, segs = [];
+      for (n = 0; n < ivs.length; n++) {
+        var l = ivs[n][0], h = ivs[n][1];
+        if (h - l >= TW) { segs.push([0, TW]); continue; }
+        l = ((l % TW) + TW) % TW; h = l + (ivs[n][1] - ivs[n][0]);
+        if (h > TW) { segs.push([l, TW]); segs.push([0, h - TW]); } else segs.push([l, h]);
+      }
+      segs.sort(function (p, q) { return p[0] - q[0]; });
+      var cover = 0, cs = segs[0][0], ce = segs[0][1];
+      for (n = 1; n < segs.length; n++) {
+        if (segs[n][0] <= ce) ce = Math.max(ce, segs[n][1]);
+        else { cover += ce - cs; cs = segs[n][0]; ce = segs[n][1]; }
+      }
+      cover += ce - cs;
+      if (cover / TW >= K.CUT_COVER) {
+        // cut row: nearest grid row to the mean height of the line, never on the poles
+        var ym = 0, cnt = 0;
+        for (n = 0; n < W.length; n++) if (Math.abs(W[n].y - yi) <= K.CUT_BAND) { ym += W[n].y; cnt++; }
+        ym /= cnt;
+        var bk = -1, bdist = 1e9;
+        for (var k = sk.r0 + 2; k <= sk.r1 - 2; k++) {
+          var dd = Math.abs(sk.rowY[k] - ym);
+          if (dd < bdist) { bdist = dd; bk = k; }
+        }
+        return bk;
+      }
+    }
+    return -1;
+  }
+
+  // expose internals to the other parts of the patch
+  window.__DW = { K: K, DEFORM: DEFORM, VITAL: VITAL, FLESH: FLESH, clamp: clamp, wkey: wkey,
+    frontMat: frontMat, backMat: backMat, makeSkin: makeSkin, resetSkinData: resetSkinData, rebuildGeo: rebuildGeo,
+    leave: leave, carve: carve, openHole: openHole, findCut: findCut, recolor: recolor };
+})();
+// ---- part 2: attaching skins to humans, applying hits, cutting limbs, respawn ----
+(function () {
+  'use strict';
+  if (window.__deformWounds2) return;
+  window.__deformWounds2 = true;
+  var DW = window.__DW, K = DW.K, clamp = DW.clamp;
+  var cutCounter = 0;
+
+  function rmFrom(arr, item) { var i = arr.indexOf(item); if (i >= 0) arr.splice(i, 1); }
+
+  // ---------- skins on a human ----------
+  function attach(H, body, sk) {
+    DW.rebuildGeo(sk, true);
+    var mesh = new THREE.Mesh(sk.geo, DW.frontMat);
+    mesh.castShadow = true;
+    mesh.userData.target = H; mesh.userData.part = sk.part; mesh.userData.limb = body.name; mesh.userData.skin = sk;
+    var back = new THREE.Mesh(sk.geo, DW.backMat);
+    sk.mesh = mesh; sk.back = back;
+    body.group.add(mesh); body.group.add(back);
+    H.parts.push(mesh);
+    GameMap.solids.push(mesh);
+  }
+
+  function convertHuman(H) {
+    if (H._dw) return;
+    H._dw = { skins: [], cutBodies: [], rebound: [] };
+    var list = H.bodies.slice();
+    for (var i = 0; i < list.length; i++) {
+      var b = list[i];
+      if (!DW.DEFORM.test(b.name) || !b.shape || b.shape.t !== 'cap' || !b.group) continue;
+      var old = H.parts.filter(function (m) { return m.userData.limb === b.name && m.parent === b.group; });
+      if (!old.length) continue;
+      var c = old[0].material.color;
+      var sk = DW.makeSkin(b, b.shape.L, b.shape.r, [c.r, c.g, c.b], old[0].userData.part);
+      for (var m = 0; m < old.length; m++) {
+        b.group.remove(old[m]);
+        rmFrom(GameMap.solids, old[m]); rmFrom(H.parts, old[m]);
+        if (old[m].geometry) old[m].geometry.dispose();
+      }
+      b._dwOrig = { m: b.m, invM: b.invM, Il: b.Il.slice(), invIl: b.invIl.slice(), shape: b.shape, sp: b.sp, br: b.br };
+      attach(H, b, sk);
+      b._dwSkin = sk;
+      H._dw.skins.push(sk);
+    }
+    for (var key in LIMBS) if (DW.DEFORM.test(key)) { LIMBS[key].hp = 1e9; H.limbHp[key] = 1e9; }
+  }
+
+  // ---------- planning a hit (before the original code runs) ----------
+  function prepare(H, sk, point, dir, dmg, weapon) {
+    var B = sk.body;
+    if (!B || !sk.mesh || !sk.mesh.parent) return null;
+    var lp = Qt.rot(Qt.conj(B.q), [point.x - B.x[0], point.y - B.x[1], point.z - B.x[2]]);
+    var a = Vx.norm(Qt.rot(Qt.conj(B.q), [dir.x, dir.y, dir.z]));
+    var key = DW.wkey(weapon);
+    var base = weapon && weapon.damage ? weapon.damage : 20;
+    var energy = clamp(dmg / base, 0.7, 1.5);
+    var D = (K.DEPTH[key] || 0.07) * energy * (0.8 + Math.random() * 0.4);
+    var R = (K.RADIUS[key] || 0.018) * (0.9 + Math.random() * 0.2);
+    var probe = [lp[0] + a[0] * 0.003, lp[1] + a[1] * 0.003, lp[2] + a[2] * 0.003];
+    var chord = DW.leave(sk, probe, a);
+    if (chord < 0.01) return null;
+    return { e: lp, a: a, R: R, D: D, chord: chord, through: D >= chord * 0.97 };
+  }
+
+  // ---------- applying a hit: carve the hole(s), then see if the holes form a cutting line ----------
+  function applyHit(H, sk, info) {
+    var seed = Math.random() * 6.28, a = info.a, e = info.e;
+    var depthIn = info.through ? info.chord * 0.5 : Math.min(info.D, info.chord * 0.92);
+    var floor = DW.carve(sk, e, a, info.R, depthIn, +1, 0.12, seed);
+    sk.wounds.push({ y: e[1], ang: Math.atan2(e[2], e[0]), R: info.R, D: depthIn });
+    if (info.through) {
+      DW.openHole(sk, floor, e);
+      var e2 = [e[0] + a[0] * info.chord, e[1] + a[1] * info.chord, e[2] + a[2] * info.chord];
+      var f2 = DW.carve(sk, e2, a, info.R * K.EXIT_R, info.chord * 0.5, -1, K.EXIT_RAG, seed + 1);
+      DW.openHole(sk, f2, e2);
+      sk.wounds.push({ y: e2[1], ang: Math.atan2(e2[2], e2[0]), R: info.R * K.EXIT_R, D: info.chord * 0.5 });
+    }
+    // deep wounds bleed longer
+    var B = sk.body, rec = null;
+    for (var i = H.wounds.length - 1; i >= 0; i--) if (H.wounds[i].b === B) { rec = H.wounds[i]; break; }
+    if (rec) { rec.bleedT = 25 + 25 * clamp(depthIn / info.chord, 0, 1); rec.deep = depthIn; }
+    var k = DW.findCut(sk);
+    if (k >= 0) { DW.rebuildGeo(sk); return sever(H, sk, k, info); }
+    DW.rebuildGeo(sk);
+    return false;
+  }
+
+  // spheres for a leg of a limb between extents lo..hi (ends that were cut are flat, so their sphere is pulled in)
+  function spheres(lo, hi, cutLo, cutHi, r) {
+    var c0 = cutLo ? lo + 0.75 * r : lo + r, c1 = cutHi ? hi - 0.75 * r : hi - r;
+    if (c1 <= c0) return [[0, (lo + hi) / 2, 0, Math.max(0.02, Math.min(r, (hi - lo) / 2 + 0.01))]];
+    var n = Math.max(2, Math.ceil((c1 - c0) / (r * 1.1)) + 1), out = [];
+    for (var i = 0; i < n; i++) out.push([0, c0 + (c1 - c0) * i / (n - 1), 0, r]);
+    return out;
+  }
+
+  function setPhysics(b, sp, lo, hi, r, m) {
+    var Lc = Math.max(0.02, (hi - lo) - 2 * r);
+    b.m = m; b.invM = 1 / m;
+    var I = inertiaOf({ t: 'cap', L: Lc, r: r }, m);
+    b.Il = I; b.invIl = [1 / I[0], 1 / I[1], 1 / I[2]];
+    b.shape = { t: 'seg', L: Lc, r: r, sp: sp };
+    b.sp = sp;
+    b.br = Math.max.apply(null, sp.map(function (p) { return Vx.len([p[0], p[1], p[2]]) + p[3]; }));
+    b._wsa = null; b.wsp = [];
+  }
+
+  // ---------- cutting a limb in two ----------
+  function sever(H, sk, k, info) {
+    var B = sk.body, r = sk.r, S = sk.S, DWs = H._dw;
+    var yc = sk.rowY[k], i, j;
+
+    // which side stays attached to the body: the side with the joint that leads back to the pelvis
+    var reach = {}, queue = [], pel = H.byName.pelvis;
+    if (pel && pel !== B) { reach[pel.id] = true; queue.push(pel); }
+    for (var qi = 0; qi < queue.length; qi++) {
+      var cur = queue[qi];
+      for (j = 0; j < H.jointsAll.length; j++) {
+        var jm = H.jointsAll[j], nxt = null;
+        if (jm.a === cur) nxt = jm.b; else if (jm.b === cur) nxt = jm.a;
+        if (nxt && nxt !== B && !reach[nxt.id]) { reach[nxt.id] = true; queue.push(nxt); }
+      }
+    }
+    var rootY = 0, rootN = 0;
+    for (j = 0; j < H.jointsAll.length; j++) {
+      var jj = H.jointsAll[j];
+      if (jj.a === B && reach[jj.b.id]) { rootY += jj.pa[1]; rootN++; }
+      else if (jj.b === B && reach[jj.a.id]) { rootY += jj.pb[1]; rootN++; }
+    }
+    var keepUpper = rootN ? (rootY / rootN >= yc) : true;
+
+    var total = sk.e1 - sk.e0;
+    var kLo = keepUpper ? yc : sk.e0, kHi = keepUpper ? sk.e1 : yc;
+    var oLo = keepUpper ? sk.e0 : yc, oHi = keepUpper ? yc : sk.e1;
+    var mKeep = Math.max(0.15, B.m * (kHi - kLo) / total), mOther = Math.max(0.1, B.m - mKeep);
+    var mid = (oLo + oHi) / 2;
+
+    // new rigid body for the loose piece
+    var spK = spheres(kLo, kHi, keepUpper, !keepUpper, r);
+    var spO = spheres(oLo, oHi, !keepUpper, keepUpper, r);
+    var spN = spO.map(function (s) { return [s[0], s[1] - mid, s[2], s[3]]; });
+    var cW = Vx.add(B.x, Qt.rot(B.q, [0, mid, 0]));
+    var LcN = Math.max(0.02, (oHi - oLo) - 2 * r);
+    var NB = makeBody(H, 'cut_' + B.name + '_' + (++cutCounter), cW, { t: 'seg', L: LcN, r: r, sp: spN }, mOther);
+    NB.q = B.q.slice();
+    NB.w = B.w.slice();
+    var rel = Qt.rot(B.q, [0, mid, 0]);
+    var cr = Vx.cross(B.w, rel);
+    NB.v = [B.v[0] + cr[0], B.v[1] + cr[1], B.v[2] + cr[2]];
+    NB.side = B.side; NB.detached = true;
+    var dw = [0, 0, 0];
+    if (info) { dw = Qt.rot(B.q, info.a); }
+    NB.v[0] += dw[0] * 1.2; NB.v[1] += dw[1] * 1.2 + 0.4; NB.v[2] += dw[2] * 1.2;
+    NB.group = new THREE.Group();
+    Humans.scene.add(NB.group);
+    H.groups.push(NB.group);
+    setPhysics(B, spK, kLo, kHi, r, mKeep);
+
+    // skin for the loose piece: a copy of the carved grid, moved into the new body's frame
+    var sk2 = {
+      body: NB, L: sk.L, r: r, S: S, R: sk.R, part: sk.part, base: sk.base,
+      rest: new Float32Array(sk.rest), pos: new Float32Array(sk.pos), nrest: new Float32Array(sk.nrest),
+      col: new Float32Array(sk.col), wet: new Float32Array(sk.wet), dep: new Float32Array(sk.dep),
+      rowY: new Float32Array(sk.rowY), dead: new Uint8Array(sk.dead),
+      ay0: sk.ay0 - mid, ay1: sk.ay1 - mid, e0: oLo - mid, e1: oHi - mid,
+      r0: keepUpper ? sk.r0 : k, r1: keepUpper ? k : sk.r1,
+      capLo: keepUpper ? sk.capLo : true, capHi: keepUpper ? true : sk.capHi,
+      capY0: keepUpper ? sk.capY0 - mid : yc - mid, capY1: keepUpper ? yc - mid : sk.capY1 - mid,
+      wounds: [], mesh: null, back: null, geo: null
+    };
+    for (i = 0; i < sk.R * S; i++) { sk2.rest[i * 3 + 1] -= mid; sk2.pos[i * 3 + 1] -= mid; }
+    for (i = 0; i < sk.R; i++) sk2.rowY[i] -= mid;
+    var keepW = [];
+    for (i = 0; i < sk.wounds.length; i++) {
+      var w = sk.wounds[i], other = keepUpper ? (w.y < yc) : (w.y >= yc);
+      if (other) sk2.wounds.push({ y: w.y - mid, ang: w.ang, R: w.R, D: w.D }); else keepW.push(w);
+    }
+    sk.wounds = keepW;
+    if (keepUpper) { sk.r0 = k; sk.capLo = true; sk.capY0 = yc; sk.e0 = yc; }
+    else { sk.r1 = k; sk.capHi = true; sk.capY1 = yc; sk.e1 = yc; }
+    DW.rebuildGeo(sk);
+    attach(H, NB, sk2);
+    NB._dwSkin = sk2;
+    H.limbHp[NB.name] = 1e9;
+    DWs.skins.push(sk2);
+    DWs.cutBodies.push(NB);
+
+    // joints on the loose side move to the new body
+    for (j = 0; j < H.jointsAll.length; j++) {
+      var J = H.jointsAll[j], onA = J.a === B, onB = J.b === B;
+      if (!onA && !onB) continue;
+      var p = onA ? J.pa : J.pb;
+      var toOther = keepUpper ? (p[1] < yc) : (p[1] > yc);
+      if (!toOther) continue;
+      DWs.rebound.push({ j: J, onA: onA, body: B, p: p.slice() });
+      var np = [p[0], p[1] - mid, p[2]];
+      if (onA) { J.a = NB; J.pa = np; } else { J.b = NB; J.pb = np; }
+    }
+    // existing wounds follow whichever piece they are on
+    for (i = 0; i < H.wounds.length; i++) {
+      var wr = H.wounds[i];
+      if (wr.b !== B) continue;
+      if (keepUpper ? (wr.lp[1] < yc) : (wr.lp[1] > yc)) { wr.b = NB; wr.lp = [wr.lp[0], wr.lp[1] - mid, wr.lp[2]]; }
+    }
+    // both stumps bleed
+    H.wounds.push({ b: B, lp: [0, yc, 0], ld: [0, keepUpper ? -1 : 1, 0], arterial: true, phase: Math.random(), bleedT: 40, drip: 0 });
+    H.wounds.push({ b: NB, lp: [0, yc - mid, 0], ld: [0, keepUpper ? 1 : -1, 0], arterial: true, phase: Math.random(), bleedT: 40, drip: 0 });
+
+    H.bodies.push(NB);
+    H.byName[NB.name] = NB;
+    if (DW.VITAL[B.name]) H.vitalCut = true;
+    if (/^(th|sh)[LR]$/.test(B.name)) H.downed = true;
+
+    // everything no longer connected to the pelvis falls under full gravity
+    var reach2 = {}, q2 = [H.byName.pelvis], qk = 0;
+    if (q2[0]) reach2[q2[0].id] = true;
+    while (qk < q2.length) {
+      var c2 = q2[qk++];
+      for (j = 0; j < H.joints.length; j++) {
+        var j2 = H.joints[j], n2 = null;
+        if (j2.a === c2) n2 = j2.b; else if (j2.b === c2) n2 = j2.a;
+        if (n2 && !reach2[n2.id]) { reach2[n2.id] = true; q2.push(n2); }
+      }
+    }
+    for (i = 0; i < H.bodies.length; i++) H.bodies[i].detached = !reach2[H.bodies[i].id];
+    if (H.hold && (H.hold.hand.detached || H.hold.wound.b.detached)) H.hold = null;
+    if (H.holds) H.holds = H.holds.filter(function (h) { return !h.hand.detached && !h.wound.b.detached; });
+    if (H.grabInfo && H.grabInfo.body && H.grabInfo.body.detached) H.grabInfo = null;
+    rebuildAdjacency(H);
+    rebuildWorld();
+
+    // blood
+    var Pw = Vx.add(B.x, Qt.rot(B.q, [0, yc, 0]));
+    var P = new THREE.Vector3(Pw[0], Pw[1], Pw[2]);
+    var dv = info ? Qt.rot(B.q, info.a) : [0, 0, 1];
+    var dirV = new THREE.Vector3(dv[0], dv[1], dv[2]);
+    Decals.spray(P, dirV, 30, 60);
+    for (i = 0; i < 40; i++) {
+      var v = Vx.norm([Math.random() - 0.5, Math.random() * 0.6 + 0.2, Math.random() - 0.5]);
+      var sc = 1.2 + Math.random() * 3.5;
+      Decals.spawnDroplet(P.clone(), new THREE.Vector3(v[0] * sc, v[1] * sc, v[2] * sc), 1);
+    }
+    return true;
+  }
+
+  // ---------- respawn: undo every cut and every carved hole ----------
+  function resetHuman(H) {
+    var D = H._dw;
+    if (!D) return;
+    var i, b;
+    for (i = D.cutBodies.length - 1; i >= 0; i--) {
+      b = D.cutBodies[i];
+      if (b.group) {
+        Humans.scene.remove(b.group);
+        rmFrom(H.groups, b.group);
+        b.group.traverse(function (c) { if (c.isMesh && c.userData.skin) { rmFrom(GameMap.solids, c); rmFrom(H.parts, c); } });
+      }
+      if (b._dwSkin && b._dwSkin.geo) b._dwSkin.geo.dispose();
+      delete H.byName[b.name];
+      delete H.limbHp[b.name];
+    }
+    for (i = D.rebound.length - 1; i >= 0; i--) {
+      var rb = D.rebound[i];
+      if (rb.onA) { rb.j.a = rb.body; rb.j.pa = rb.p; } else { rb.j.b = rb.body; rb.j.pb = rb.p; }
+    }
+    D.cutBodies.length = 0; D.rebound.length = 0;
+    D.skins = D.skins.filter(function (s) { return !(s.body && s.body.name.indexOf('cut_') === 0); });
+    if (H.allBodies) {
+      H.bodies = H.allBodies.slice();
+      H.jointsAll = H.allJoints.slice();
+      H.byName = {};
+      H.bodies.forEach(function (x) { H.byName[x.name] = x; });
+    }
+    for (i = 0; i < D.skins.length; i++) {
+      var sk = D.skins[i];
+      b = sk.body;
+      if (b._dwOrig) {
+        var o = b._dwOrig;
+        b.m = o.m; b.invM = o.invM; b.Il = o.Il.slice(); b.invIl = o.invIl.slice();
+        b.shape = o.shape; b.sp = o.sp; b.br = o.br; b._wsa = null; b.wsp = [];
+      }
+      sk.ay0 = -sk.L / 2; sk.ay1 = sk.L / 2; sk.e0 = -sk.L / 2 - sk.r; sk.e1 = sk.L / 2 + sk.r;
+      DW.resetSkinData(sk);
+      DW.rebuildGeo(sk);
+    }
+    for (var key in LIMBS) if (DW.DEFORM.test(key)) H.limbHp[key] = 1e9;
+    rebuildAdjacency(H);
+    rebuildWorld();
+  }
+
+  window.__DW.convertHuman = convertHuman;
+  window.__DW.prepare = prepare;
+  window.__DW.applyHit = applyHit;
+  window.__DW.resetHuman = resetHuman;
+})();
+// ---- part 3: hooks into the existing game ----
+(function () {
+  'use strict';
+  if (window.__deformWounds3) return;
+  window.__deformWounds3 = true;
+  var DW = window.__DW;
+
+  // 1) the old flat wound picture is no longer drawn on carved limbs (the hole itself is the wound now)
+  var _addDecal = Decals.addDecal;
+  Decals.addDecal = function (parent, worldPoint, worldNormal, tex, size, opts) {
+    if (parent && parent.userData && parent.userData.skin && tex === Decals.tex.wound) return null;
+    return _addDecal.apply(this, arguments);
+  };
+
+  // 2) every shot: plan the hole before the old code runs, carve it afterwards.
+  //    The old chain still does damage, impulses, hand holds, entry/exit bleeding records, drips and sprays.
+  var _hit = Humans.hit;
+  Humans.hit = function (H, part, object, point, dir, dmg, weapon, normal) {
+    var sk = object && object.userData && object.userData.skin;
+    var info = null;
+    if (sk && H._dw) info = DW.prepare(H, sk, point, dir, dmg, weapon);
+    var res = _hit.apply(this, arguments);
+    if (info) {
+      var cut = false;
+      try { cut = DW.applyHit(H, sk, info); } catch (err) { if (window.console) console.error('deform wound failed', err); }
+      if (cut) {
+        if (!H.dead && (H.hp <= 0 || H.vitalCut)) {
+          Humans.die(H, dir, point, part, object.userData.limb);
+          res = 'kill';
+        } else if (res === 'hit') res = 'dismember';
+      }
+    }
+    return res;
+  };
+
+  // 3) new humans (and the ones that already exist) get carvable skins
+  var _make = Humans.makeHuman;
+  Humans.makeHuman = function () {
+    var H = _make.apply(this, arguments);
+    DW.convertHuman(H);
+    return H;
+  };
+  for (var i = 0; i < Humans.list.length; i++) DW.convertHuman(Humans.list[i]);
+
+  // 4) respawn puts every limb back together and heals the holes
+  var _respawn = Humans.respawn;
+  Humans.respawn = function (H) {
+    DW.resetHuman(H);
+    var r = _respawn.apply(this, arguments);
+    rebuildWorld();
+    return r;
+  };
+})();</script>
 </body>
 </html>
