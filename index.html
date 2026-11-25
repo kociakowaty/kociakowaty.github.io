@@ -13998,6 +13998,755 @@ Gait.update = function (H, B, dt) {
   };
 })();
 </script>
+<script>
+  // ===================== BLOOD FX v1: procedural pools, droplet streaks, impact spray =====================
+// Paste as the LAST <script> block of the page.
+//  1. Pools: every pool gets a procedural shader: irregular spreading shape with fingering, meniscus rim,
+//     refraction of the ground through the liquid (Beer-Lambert absorption), Fresnel sky + sun reflection,
+//     impact ripples, merging of new drops into existing pools, slow creep, and clotting / drying with crackle.
+//  2. Droplets: stretched along their velocity, glossy, with a frayed motion-blur streak behind them.
+//  3. Impact spray: mist puffs and fast streaks out of the entry wound (back-spatter) and exit wound (forward),
+//     plus a lighter spray for arterial pulses and severed limbs.
+(function () {
+  'use strict';
+  if (window.__bloodFX) return;
+  window.__bloodFX = true;
 
+  var V3 = THREE.Vector3, V2 = THREE.Vector2, V4 = THREE.Vector4;
+  function clamp(x, a, b) { return x < a ? a : (x > b ? b : x); }
+  function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
+
+  var READY = false;
+  var CTX = { entry: null, exit: null };
+
+  // ---------- shared uniforms (every blood material points at these same objects) ----------
+  var whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+  whiteTex.needsUpdate = true;
+  var G = {
+    uSunDir:     { value: new V3(0.5, 0.8, 0.3) },
+    uSunCol:     { value: new V3(1.1, 1.0, 0.8) },
+    uSkyHor:     { value: new V3(0.62, 0.72, 0.8) },
+    uSkyZen:     { value: new V3(0.38, 0.58, 0.85) },
+    uLit:        { value: new V3(1, 1, 1) },
+    uNight:      { value: 0 },
+    uGroundTex:  { value: whiteTex },
+    uGroundTile: { value: 0.25 },
+    uGroundCol:  { value: new THREE.Color(0.29, 0.35, 0.28) },
+    uFogCol:     { value: new THREE.Color(0x9fb8cc) },
+    uFogNear:    { value: 60 },
+    uFogFar:     { value: 190 },
+    uPx:         { value: 800 }
+  };
+
+  // ---------- GLSL ----------
+  var NZ = [
+    'float hash21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }',
+    'float vnoise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);',
+    '  float a=hash21(i); float b=hash21(i+vec2(1.0,0.0)); float c=hash21(i+vec2(0.0,1.0)); float d=hash21(i+vec2(1.0,1.0));',
+    '  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }'
+  ].join('\n');
+
+  var POOL_VS = [
+    'varying vec2 vP; varying vec3 vWPos; varying vec3 vT; varying vec3 vB; varying vec3 vN; varying float vFogD;',
+    'void main(){',
+    '  vP = (uv - 0.5) * 2.0;',
+    '  vec4 wp = modelMatrix * vec4(position, 1.0);',
+    '  vWPos = wp.xyz;',
+    '  vT = normalize(modelMatrix[0].xyz);',
+    '  vB = normalize(modelMatrix[1].xyz);',
+    '  vN = normalize(modelMatrix[2].xyz);',
+    '  vec4 mv = viewMatrix * wp;',
+    '  vFogD = -mv.z;',
+    '  gl_Position = projectionMatrix * mv;',
+    '}'
+  ].join('\n');
+
+  var POOL_FS = [
+    'uniform float uAge, uDryK, uFresh, uSeed, uExtra, uFing, uSM, uHp;',
+    'uniform vec2 uScale;',
+    'uniform vec4 uRip[4];',
+    'uniform vec3 uSunDir, uSunCol, uSkyHor, uSkyZen, uLit, uGroundCol;',
+    'uniform float uNight, uGroundTile, uFogNear, uFogFar;',
+    'uniform vec3 uFogCol;',
+    'uniform sampler2D uGroundTex;',
+    'varying vec2 vP; varying vec3 vWPos; varying vec3 vT; varying vec3 vB; varying vec3 vN; varying float vFogD;',
+    NZ,
+    // signed distance (normalised units, <0 inside) to the pool outline: lobes, fingers, noise, spreading over time
+    'float shape(vec2 p){',
+    '  float a = atan(p.y, p.x + 1e-5);',
+    '  float r = length(p);',
+    '  float g = 0.30 + 0.70*(1.0-exp(-uAge*2.6)) + 0.05*(1.0-exp(-uAge*0.05)) + uExtra;',
+    '  float ft = smoothstep(0.1,1.8,uAge)*(1.0-uDryK)*uFing;',
+    '  float rad = 1.0 + 0.15*sin(3.0*a+uSeed*6.283) + 0.09*sin(5.0*a+uSeed*17.3) + 0.05*sin(8.0*a+uSeed*31.7);',
+    '  rad += ft*(0.55*pow(0.5+0.5*sin(6.0*a+uSeed*43.0),12.0) + 0.75*pow(0.5+0.5*sin(3.0*a+uSeed*9.0),24.0));',
+    '  float R = min(0.5*g*rad, 0.92);',
+    '  R += (vnoise(p*8.0+uSeed*10.0)-0.5)*0.035*g;',
+    '  return r - R;',
+    '}',
+    // expanding capillary ripples from drops that landed in the pool
+    'float ripples(vec2 p){',
+    '  float s = 0.0;',
+    '  for (int i=0;i<4;i++){',
+    '    vec4 q = uRip[i];',
+    '    float dt = uAge - q.z;',
+    '    if (q.w > 0.0 && dt > 0.0 && dt < 5.0){',
+    '      vec2 dv = (p - q.xy)*0.5*uScale;',
+    '      float r = length(dv);',
+    '      float fr = 0.28*dt;',
+    '      float en = exp(-pow((r-fr)/0.03, 2.0));',
+    '      s += sin((r-fr)*240.0)*en*exp(-dt*1.2)*q.w*0.0009*(1.0-exp(-dt*30.0));',
+    '    }',
+    '  }',
+    '  return s;',
+    '}',
+    // liquid thickness in metres: plateau, meniscus bead at the rim, ripples, slow wobble, clot cracks
+    'float height(vec2 p){',
+    '  float d = shape(p);',
+    '  float dm = -d*uSM;',
+    '  if (dm <= 0.0) return 0.0;',
+    '  float wet = 1.0 - uDryK;',
+    '  float prof = 1.0 - exp(-dm/0.010);',
+    '  float bead = 0.25*exp(-pow((dm-0.004)/0.003, 2.0))*wet;',
+    '  float h = uHp*(prof + bead);',
+    '  float fade = smoothstep(0.0, 0.006, dm);',
+    '  h += ripples(p)*fade;',
+    '  float wob = sin(p.x*13.0+uAge*1.7+uSeed*9.0)*sin(p.y*11.0-uAge*1.3+uSeed*4.0);',
+    '  h += wob*0.00012*wet*fade*(0.3+0.7*uFresh);',
+    '  float crk = 1.0 - smoothstep(0.0, 0.045, abs(vnoise(p*13.0+uSeed*7.0)-0.5));',
+    '  h -= crk*0.0006*uDryK*prof;',
+    '  return max(h, 0.0);',
+    '}',
+    'void main(){',
+    '  vec2 p = vP;',
+    '  float d = shape(p);',
+    '  float aa = fwidth(d)*1.5 + 0.0005;',
+    '  float cover = 1.0 - smoothstep(-aa, aa, d);',
+    '  if (cover < 0.004) discard;',
+    '  float h0 = height(p);',
+    '  float e = 0.012;',
+    '  float hx = height(p + vec2(e, 0.0));',
+    '  float hy = height(p + vec2(0.0, e));',
+    '  vec2 grad = vec2((hx-h0)/(e*uScale.x), (hy-h0)/(e*uScale.y)) * 2.2;',
+    '  vec3 N = normalize(vT*(-grad.x) + vB*(-grad.y) + vN);',
+    '  vec3 V = normalize(cameraPosition - vWPos);',
+    '  float cosT = clamp(dot(N, V), 0.0, 1.0);',
+    '  float dm = -d*uSM;',
+    '  float prof = 1.0 - exp(-max(dm,0.0)/0.010);',
+    '  float dk = clamp(uDryK + (1.0-prof)*uDryK*0.8, 0.0, 1.0);',
+    // refraction: bend the view ray into the liquid and sample the ground where it lands (exaggerated)
+    '  vec3 Rf = refract(-V, N, 0.7246);',
+    '  vec2 off = Rf.xz / max(-Rf.y, 0.3) * (h0 + 0.0004) * 22.0;',
+    '  vec3 gTex = texture2D(uGroundTex, (vWPos.xz + off)*uGroundTile).rgb;',
+    '  vec3 ground = gTex*uGroundCol*uLit;',
+    // Beer-Lambert absorption: blood eats green and blue much faster than red
+    '  vec3 T = exp(-vec3(520.0, 5200.0, 5600.0)*h0);',
+    '  vec3 baseC = mix(vec3(0.20,0.010,0.014), vec3(0.46,0.020,0.028), uFresh);',
+    '  vec3 scat = baseC*(1.0-exp(-h0*500.0))*(uLit*0.85+0.05);',
+    '  vec3 col = ground*T + scat;',
+    // clotted crust
+    '  float crk = 1.0 - smoothstep(0.0, 0.045, abs(vnoise(p*13.0+uSeed*7.0)-0.5));',
+    '  vec3 crust = vec3(0.115,0.012,0.012)*(0.6+0.4*vnoise(p*30.0))*(uLit*0.9+0.04);',
+    '  crust *= 1.0 - 0.7*crk;',
+    '  col = mix(col, crust, dk*0.88);',
+    // reflection: Fresnel * (sky gradient + sun glint + moon glint), roughness grows as it dries
+    '  vec3 Rv = reflect(-V, N);',
+    '  float F = (0.03 + 0.97*pow(1.0-cosT, 5.0))*(1.0 - 0.75*dk);',
+    '  vec3 sky = mix(uSkyHor, uSkyZen, pow(clamp(Rv.y,0.0,1.0), 0.45));',
+    '  float rough = clamp(dk*1.2, 0.0, 1.0);',
+    '  float sd = max(dot(Rv, uSunDir), 0.0);',
+    '  float md = max(dot(Rv, -uSunDir), 0.0);',
+    '  vec3 glint = uSunCol*(pow(sd, mix(1400.0,40.0,rough))*mix(55.0,2.0,rough))*step(0.0, uSunDir.y);',
+    '  glint += vec3(0.55,0.65,1.0)*uNight*pow(md, 900.0)*22.0*(1.0-rough);',
+    '  col = col*(1.0-F) + (sky*0.9 + glint)*F;',
+    '  float a = cover*smoothstep(0.0, 0.0007, h0);',
+    '  vec4 outc = linearToOutputTexel(vec4(col, a));',
+    '  outc.rgb = mix(outc.rgb, uFogCol, smoothstep(uFogNear, uFogFar, vFogD));',
+    '  gl_FragColor = outc;',
+    '}'
+  ].join('\n');
+
+  // droplet streak: a camera-facing strip, tapered, with a frayed ("ripped") edge that dissolves toward the tail
+  var RIB_VS = [
+    'attribute vec2 aUV; attribute vec2 aData;',
+    'varying vec2 vUv; varying vec2 vData; varying float vFogD;',
+    'void main(){',
+    '  vUv = aUV; vData = aData;',
+    '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+    '  vFogD = -mv.z;',
+    '  gl_Position = projectionMatrix * mv;',
+    '}'
+  ].join('\n');
+  var RIB_FS = [
+    'uniform vec3 uLit; uniform vec3 uFogCol; uniform float uFogNear, uFogFar;',
+    'varying vec2 vUv; varying vec2 vData; varying float vFogD;',
+    NZ,
+    'void main(){',
+    '  float x = vUv.x, y = vUv.y, seed = vData.x, al = vData.y;',
+    '  float ax = abs(x);',
+    '  float body = mix(1.0, 0.18, pow(y, 0.7));',
+    '  float n1 = vnoise(vec2(y*7.0 + seed*40.0, x*2.5 + seed*13.0));',
+    '  float n2 = vnoise(vec2(y*19.0 + seed*11.0, x*5.0 - seed*7.0));',
+    '  float rip = 0.65*n1 + 0.35*n2;',
+    '  float edge = body*(0.40 + 0.85*rip);',
+    '  float m = 1.0 - smoothstep(edge*0.55, edge, ax);',
+    '  float dis = smoothstep(y - 0.30, y + 0.04, rip*1.25);',
+    '  float fib = 0.65 + 0.35*vnoise(vec2(x*9.0 + seed*21.0, y*1.5));',
+    '  float a = m * mix(1.0, dis, smoothstep(0.05, 0.35, y)) * fib * (1.0 - 0.85*pow(y, 1.6)) * al;',
+    '  a *= smoothstep(0.0, 0.06, y + 0.03);',
+    '  if (a < 0.01) discard;',
+    '  vec3 col = vec3(0.30,0.018,0.022)*uLit*(0.8+0.2*rip);',
+    '  col += vec3(0.9,0.55,0.5)*pow(1.0-ax, 5.0)*(1.0-y)*0.10*dot(uLit, vec3(0.33));',
+    '  vec4 o = linearToOutputTexel(vec4(col, clamp(a, 0.0, 1.0)));',
+    '  o.rgb = mix(o.rgb, uFogCol, smoothstep(uFogNear, uFogFar, vFogD));',
+    '  gl_FragColor = o;',
+    '}'
+  ].join('\n');
+
+  // mist: soft round puffs, point sprites sized in metres
+  var MIST_VS = [
+    'attribute float aSize; attribute float aAlpha; attribute float aSeed;',
+    'uniform float uPx;',
+    'varying float vA; varying float vS; varying float vFogD;',
+    'void main(){',
+    '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+    '  vFogD = -mv.z; vA = aAlpha; vS = aSeed;',
+    '  gl_PointSize = clamp(aSize*uPx/max(-mv.z, 0.05), 1.0, 96.0);',
+    '  gl_Position = projectionMatrix * mv;',
+    '}'
+  ].join('\n');
+  var MIST_FS = [
+    'uniform vec3 uLit; uniform vec3 uFogCol; uniform float uFogNear, uFogFar;',
+    'varying float vA; varying float vS; varying float vFogD;',
+    NZ,
+    'void main(){',
+    '  vec2 c = gl_PointCoord*2.0 - 1.0;',
+    '  float r2 = dot(c, c);',
+    '  if (r2 > 1.0) discard;',
+    '  float g = exp(-r2*2.6);',
+    '  float n = vnoise(c*2.5 + vS*30.0);',
+    '  float a = clamp(vA*g*(0.65 + 0.7*n), 0.0, 1.0);',
+    '  if (a < 0.01) discard;',
+    '  vec3 col = vec3(0.36,0.025,0.03)*uLit;',
+    '  vec4 o = linearToOutputTexel(vec4(col, a));',
+    '  o.rgb = mix(o.rgb, uFogCol, smoothstep(uFogNear, uFogFar, vFogD));',
+    '  gl_FragColor = o;',
+    '}'
+  ].join('\n');
+
+  // ---------- environment: sun, sky, ground, fog -> shared uniforms ----------
+  var sun = null, hemi = null, groundMat = null, groundTry = 0;
+  function findGround() {
+    var found = null;
+    Game.scene.traverse(function (o) {
+      if (found || !o.isMesh || !o.material) return;
+      var u = o.material.userData;
+      if (u && u.slot === 'ground' && u.uTex) found = o.material;
+    });
+    return found;
+  }
+  function updateEnv(dt) {
+    var sc = Game.scene;
+    if (!sun || !hemi) {
+      sc.traverse(function (o) {
+        if (!sun && o.isDirectionalLight) sun = o;
+        if (!hemi && o.isHemisphereLight) hemi = o;
+      });
+    }
+    if (!groundMat) {
+      groundTry -= dt;
+      if (groundTry <= 0) { groundTry = 2; groundMat = findGround(); }
+    }
+    var sd = G.uSunDir.value;
+    var sunI = 0, sr = 1, sg = 1, sb = 1;
+    if (sun) {
+      sd.set(sun.position.x - sun.target.position.x, sun.position.y - sun.target.position.y, sun.position.z - sun.target.position.z);
+      if (sd.lengthSq() < 1e-6) sd.set(0.5, 0.8, 0.3);
+      sd.normalize();
+      sunI = sun.intensity; sr = sun.color.r; sg = sun.color.g; sb = sun.color.b;
+    }
+    G.uSunCol.value.set(sr * sunI, sg * sunI, sb * sunI);
+    var ar = 0.3, ag = 0.3, ab = 0.3;
+    if (hemi) { ar = hemi.color.r * hemi.intensity; ag = hemi.color.g * hemi.intensity; ab = hemi.color.b * hemi.intensity; }
+    var up = Math.max(sd.y, 0);
+    G.uLit.value.set(clamp(ar + sr * sunI * up, 0, 1.8), clamp(ag + sg * sunI * up, 0, 1.8), clamp(ab + sb * sunI * up, 0, 1.8));
+    G.uNight.value = 1 - sstep(-0.12, 0.14, sd.y);
+
+    var bg = sc.background;
+    if (bg && bg.isColor) {
+      G.uSkyHor.value.set(bg.r, bg.g, bg.b);
+      G.uSkyZen.value.set(bg.r * 0.62, bg.g * 0.8, Math.min(1.2, bg.b * 1.05));
+    }
+    if (sc.fog) {
+      G.uFogCol.value.copy(sc.fog.color);
+      G.uFogNear.value = sc.fog.near; G.uFogFar.value = sc.fog.far;
+    }
+    if (groundMat) {
+      var gu = groundMat.userData;
+      G.uGroundTex.value = (gu.uTex && gu.uTex.value) || whiteTex;
+      G.uGroundTile.value = gu.uTile ? gu.uTile.value : 0.25;
+      G.uGroundCol.value.copy(groundMat.color);
+    }
+    var cam = Game.camera, R = Game.renderer;
+    G.uPx.value = R.domElement.height / (2 * Math.tan(cam.fov * Math.PI / 360));
+  }
+
+  // ---------- 1. POOLS ----------
+  var POOLS = [];
+
+  function makePoolMat(Sx, Sy, Dx, Dy, round) {
+    var Davg = 0.5 * (Dx + Dy);
+    var u = {
+      uAge: { value: 0 }, uDryK: { value: 0 }, uFresh: { value: 1 }, uSeed: { value: Math.random() },
+      uExtra: { value: 0 },
+      uFing: { value: round ? 0.7 + Math.random() * 0.5 : (Math.random() < 0.5 ? 0 : 0.35 + Math.random() * 0.6) },
+      uSM: { value: 0.25 * (Sx + Sy) },
+      uHp: { value: 0.003 + 0.004 * clamp(Davg / 0.6, 0, 1) },
+      uScale: { value: new V2(Sx, Sy) },
+      uRip: { value: [new V4(0, 0, -100, 0), new V4(0, 0, -100, 0), new V4(0, 0, -100, 0), new V4(0, 0, -100, 0)] }
+    };
+    for (var k in G) if (k !== 'uPx') u[k] = G[k];
+    return new THREE.ShaderMaterial({
+      uniforms: u, vertexShader: POOL_VS, fragmentShader: POOL_FS,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      extensions: { derivatives: true }
+    });
+  }
+
+  // A new drop or body pool that lands inside an existing pool feeds it instead of making a new decal
+  function tryMerge(x, y, z, speed, round, rnew) {
+    for (var i = POOLS.length - 1; i >= 0; i--) {
+      var q = POOLS[i], m = q.mesh;
+      if (!m.parent) continue;
+      if (Math.abs(m.position.y - y) > 0.08) continue;
+      var dx = x - m.position.x, dz = z - m.position.z;
+      var Sx = m.scale.x, Sy = m.scale.y, Sm = Math.max(Sx, Sy) * 0.5;
+      if (dx * dx + dz * dz > Sm * Sm) continue;
+      var c = Math.cos(m.rotation.y), s = Math.sin(m.rotation.y);
+      var u = dx * c - dz * s, v = -dx * s - dz * c;
+      var px = 2 * u / Sx, py = 2 * v / Sy;
+      var g = 0.30 + 0.70 * (1 - Math.exp(-q.age * 2.6)) + 0.05 * (1 - Math.exp(-q.age * 0.05)) + q.mat.uniforms.uExtra.value;
+      var R = 0.5 * g;
+      if (Math.hypot(px, py) > R * 0.72) continue;
+      var Rm = R * (Sx + Sy) * 0.25;
+      if (rnew > Rm * 1.15) continue;
+      q.extraT = Math.min(0.3, q.extraT + (round ? 0.012 : 0.1 * Math.min(1, rnew / Rm)));
+      q.fed = q.age; q.settled = false;
+      q.rip[q.ri].set(px, py, q.age, round ? clamp(speed * 0.25, 0.3, 1.4) : 1.2);
+      q.ri = (q.ri + 1) & 3;
+      return q;
+    }
+    return null;
+  }
+
+  function splash(x, y, z, speed) {
+    var n = Math.min(4, 1 + Math.floor(speed * 0.5));
+    for (var i = 0; i < n; i++) {
+      var a = Math.random() * 6.2832, hs = 0.5 + Math.random() * 1.0, vy = 1.0 + Math.random() * 1.0;
+      var len0 = Decals.droplets.length;
+      Decals.spawnDroplet(new V3(x, y + 0.012, z), new V3(Math.cos(a) * hs, vy, Math.sin(a) * hs), 1);
+      if (Decals.droplets.length > len0) {
+        var d = Decals.droplets[Decals.droplets.length - 1];
+        d.mesh.scale.multiplyScalar(0.4 + Math.random() * 0.25);
+      }
+    }
+  }
+
+  var _pool = Decals.pool;
+  Decals.pool = function (x, y, z, impactDir, speed, sinAngle, round) {
+    if (!READY) return _pool.apply(this, arguments);
+    var sa = Math.max(0.12, Math.min(1, sinAngle));
+    var rOrig = Math.min(0.32, 0.05 + speed * 0.018 + (0.4 / 3) * (1 - sa) * 0.1);
+    var rnew = rOrig * (round ? 0.32 : 1);
+    var q = tryMerge(x, y, z, speed, round, rnew);
+    if (q) {
+      if (round && speed > 3.2 && Math.random() < 0.4) splash(x, y, z, speed);
+      return q.mesh;
+    }
+    var mesh = _pool.apply(this, arguments);
+    if (!mesh) return mesh;
+    var rec = null;
+    for (var i = Decals.pools.length - 1; i >= 0; i--) if (Decals.pools[i].mesh === mesh) { rec = Decals.pools[i]; break; }
+    var tx = rec ? rec.target.x : mesh.scale.x * 4, ty = rec ? rec.target.y : mesh.scale.y * 4;
+    var f = round ? 0.32 : 1;
+    var Dx = Math.max(0.012, tx * f), Dy = Math.max(0.012, ty * f);
+    if (rec) rec.done = true;                       // the old scale animation stops; the shader animates the growth
+    mesh.scale.set(Dx * 2, Dy * 2, 1);              // quad is twice the final pool so lobes and fingers have room
+    if (mesh.material && mesh.material.dispose) mesh.material.dispose();
+    var mat = makePoolMat(Dx * 2, Dy * 2, Dx, Dy, round);
+    mesh.material = mat;
+    mesh.renderOrder = 1;
+    var rp = {
+      mesh: mesh, mat: mat, age: 0, fed: 0, extraT: 0, settled: false, ri: 0,
+      rip: mat.uniforms.uRip.value
+    };
+    if (round && speed > 1) { rp.rip[0].set(0, 0, 0, clamp(speed * 0.25, 0.3, 1.4)); rp.ri = 1; }
+    mesh.userData.poolRec = rp;
+    POOLS.push(rp);
+    if (round && speed > 3.2 && Math.random() < 0.4) splash(x, y, z, speed);
+    return mesh;
+  };
+
+  function updatePools(dt) {
+    for (var i = POOLS.length - 1; i >= 0; i--) {
+      var q = POOLS[i];
+      if (!q.mesh.parent) { q.mat.dispose(); POOLS.splice(i, 1); continue; }
+      q.age += dt;
+      var dry = q.age - q.fed;
+      if (q.settled) continue;
+      var u = q.mat.uniforms;
+      u.uAge.value = q.age;
+      u.uDryK.value = sstep(10, 140, dry);
+      u.uFresh.value = Math.exp(-dry / 14);
+      u.uExtra.value += (q.extraT - u.uExtra.value) * Math.min(1, dt * 1.5);
+      if (dry > 160 && Math.abs(q.extraT - u.uExtra.value) < 0.001) q.settled = true;
+    }
+  }
+
+  // ---------- 2. DROPLET STREAKS + SPRAY PARTICLES ----------
+  var RB = { cap: 4600, n: 0, pos: null, uv: null, data: null, geo: null, mesh: null };
+  var MIST = { cap: 1800, n: 0, d: null, pos: null, size: null, alpha: null, seed: null, geo: null, pts: null };
+  var STK = { cap: 1500, n: 0, d: null };
+  var camP = new V3(), tmpV = new V3(), vUp = new V3(0, 1, 0), vX = new V3(1, 0, 0);
+  var _b1 = new V3(), _b2 = new V3(), _cd = new V3();
+
+  function pushRibbon(hx, hy, hz, dx, dy, dz, len, hw, alpha, seed) {
+    if (RB.n >= RB.cap) return;
+    var mx = hx - dx * len * 0.5, my = hy - dy * len * 0.5, mz = hz - dz * len * 0.5;
+    var cx = camP.x - mx, cy = camP.y - my, cz = camP.z - mz;
+    var sx = dy * cz - dz * cy, sy = dz * cx - dx * cz, sz = dx * cy - dy * cx;
+    var sl = Math.sqrt(sx * sx + sy * sy + sz * sz);
+    if (sl < 1e-7) return;
+    sl = hw / sl; sx *= sl; sy *= sl; sz *= sl;
+    var tx = hx - dx * len, ty = hy - dy * len, tz = hz - dz * len;
+    var P = RB.pos, o = RB.n * 12;
+    P[o] = hx - sx; P[o + 1] = hy - sy; P[o + 2] = hz - sz;
+    P[o + 3] = hx + sx; P[o + 4] = hy + sy; P[o + 5] = hz + sz;
+    P[o + 6] = tx - sx * 0.7; P[o + 7] = ty - sy * 0.7; P[o + 8] = tz - sz * 0.7;
+    P[o + 9] = tx + sx * 0.7; P[o + 10] = ty + sy * 0.7; P[o + 11] = tz + sz * 0.7;
+    var D = RB.data, q = RB.n * 8;
+    D[q] = seed; D[q + 1] = alpha; D[q + 2] = seed; D[q + 3] = alpha;
+    D[q + 4] = seed; D[q + 5] = alpha; D[q + 6] = seed; D[q + 7] = alpha;
+    RB.n++;
+  }
+
+  // random direction inside a cone around dir
+  function coneDir(dir, half, out) {
+    var ax = Math.abs(dir.y) < 0.95 ? vUp : vX;
+    _b1.crossVectors(dir, ax).normalize();
+    _b2.crossVectors(dir, _b1);
+    var t = Math.tan(half) * Math.pow(Math.random(), 0.7), ph = Math.random() * 6.2832;
+    out.copy(dir).addScaledVector(_b1, Math.cos(ph) * t).addScaledVector(_b2, Math.sin(ph) * t).normalize();
+  }
+
+  function addMist(px, py, pz, dir, speed, life, s0, s1, a0) {
+    if (MIST.n >= MIST.cap) return;
+    var a = MIST.d, o = MIST.n * 12;
+    a[o] = px; a[o + 1] = py; a[o + 2] = pz;
+    a[o + 3] = dir.x * speed; a[o + 4] = dir.y * speed; a[o + 5] = dir.z * speed;
+    a[o + 6] = 0; a[o + 7] = life; a[o + 8] = s0; a[o + 9] = s1; a[o + 10] = Math.random(); a[o + 11] = a0;
+    MIST.n++;
+  }
+  function addStreak(px, py, pz, dir, speed, life, hw, a0) {
+    if (STK.n >= STK.cap) return;
+    var a = STK.d, o = STK.n * 12;
+    a[o] = px; a[o + 1] = py; a[o + 2] = pz;
+    a[o + 3] = dir.x * speed; a[o + 4] = dir.y * speed; a[o + 5] = dir.z * speed;
+    a[o + 6] = 0; a[o + 7] = life; a[o + 8] = hw; a[o + 9] = Math.random(); a[o + 10] = a0; a[o + 11] = 0;
+    STK.n++;
+  }
+
+  // cfg: mist, streak, puff (counts), cone, mv0/mv1 (mist speed), sv0/sv1 (streak speed), ml0/ml1 (mist life), sl0/sl1 (streak life)
+  function burst(origin, dir, cfg) {
+    if (!READY) return;
+    if (Game.camera.position.distanceToSquared(origin) > 6400) return;
+    var i, sp, life;
+    for (i = 0; i < cfg.mist; i++) {
+      coneDir(dir, cfg.cone, _cd);
+      sp = cfg.mv0 + (cfg.mv1 - cfg.mv0) * Math.pow(Math.random(), 1.3);
+      life = cfg.ml0 + Math.random() * (cfg.ml1 - cfg.ml0);
+      var s0 = 0.010 + Math.random() * 0.016;
+      addMist(origin.x + (Math.random() - 0.5) * 0.01, origin.y + (Math.random() - 0.5) * 0.01, origin.z + (Math.random() - 0.5) * 0.01,
+        _cd, sp, life, s0, s0 * (3 + Math.random() * 2), 0.55 + Math.random() * 0.35);
+    }
+    for (i = 0; i < cfg.streak; i++) {
+      coneDir(dir, cfg.cone * 0.9, _cd);
+      sp = cfg.sv0 + (cfg.sv1 - cfg.sv0) * Math.pow(Math.random(), 1.2);
+      life = cfg.sl0 + Math.random() * (cfg.sl1 - cfg.sl0);
+      addStreak(origin.x, origin.y, origin.z, _cd, sp, life, 0.0025 + Math.random() * 0.004, 0.85);
+    }
+    for (i = 0; i < cfg.puff; i++) {
+      coneDir(dir, cfg.cone * 0.7, _cd);
+      addMist(origin.x, origin.y, origin.z, _cd, 0.4 + Math.random() * 0.9, 0.35 + Math.random() * 0.3,
+        0.03, 0.10 + Math.random() * 0.05, 0.3);
+    }
+  }
+
+  function backDir(n, d) {
+    var b = n.clone();
+    if (d && b.dot(d) > 0) b.negate();
+    b.multiplyScalar(0.8);
+    if (d) b.addScaledVector(d, -0.35);
+    return b.lengthSq() < 1e-6 ? new V3(0, 1, 0) : b.normalize();
+  }
+
+  function entryBurst(point, back, eff, weapon) {
+    var ws = clamp((weapon && weapon.woundScale) || 1, 0.3, 1.3);
+    var o = point.clone().addScaledVector(back, 0.01);
+    burst(o, back, {
+      mist: Math.round(clamp((8 + eff * 0.18) * ws, 5, 38)),
+      streak: Math.round(clamp((5 + eff * 0.12) * ws, 3, 16)),
+      puff: 3, cone: 0.6, mv0: 1.2, mv1: 4.5, sv0: 2.5, sv1: 7.5, ml0: 0.25, ml1: 0.6, sl0: 0.25, sl1: 0.55
+    });
+  }
+  function exitBurst(point, fwd, eff) {
+    var o = point.clone().addScaledVector(fwd, 0.01);
+    burst(o, fwd, {
+      mist: Math.round(clamp(14 + eff * 0.3, 10, 70)),
+      streak: Math.round(clamp(10 + eff * 0.2, 8, 32)),
+      puff: 6, cone: 0.5, mv0: 3, mv1: 9, sv0: 5, sv1: 13, ml0: 0.3, ml1: 0.8, sl0: 0.3, sl1: 0.7
+    });
+  }
+  function genericBurst(point, dir, count) {
+    var L = dir.length();
+    var u = L > 1e-6 ? dir.clone().multiplyScalar(1 / L) : new V3(0, 1, 0);
+    var big = count >= 30;
+    var base = big ? 5 : clamp(L * 2.2, 1.2, 4.5);
+    burst(point, u, {
+      mist: Math.round(clamp(count * 0.45, 2, 40)),
+      streak: Math.round(clamp(count * 0.3, 2, 24)),
+      puff: big ? 4 : 0, cone: 0.9, mv0: base * 0.4, mv1: base * 1.1, sv0: base * 0.7, sv1: base * 1.6,
+      ml0: 0.25, ml1: 0.65, sl0: 0.3, sl1: 0.7
+    });
+  }
+
+  // ---------- hooks: entry wound, exit wound, generic spray ----------
+  var _wound = Decals.wound;
+  Decals.wound = function (partMesh, point, normal, dir, dmg, weapon) {
+    CTX.entry = { n: normal, d: dir, dmg: dmg, w: weapon };
+    try { return _wound.apply(this, arguments); } finally { CTX.entry = null; }
+  };
+
+  var _addDecal = Decals.addDecal;
+  Decals.addDecal = function (parent, wp, wn, tex, size, opts) {
+    if (READY && tex === Decals.tex.wound && !CTX.entry && wn) {
+      var lh = (typeof Gait !== 'undefined' && Gait._lastHit) ? Gait._lastHit : null;
+      CTX.exit = { n: wn.clone(), d: lh && lh.dir ? lh.dir.clone() : null, eff: lh && lh.eff ? lh.eff : 30 };
+    }
+    return _addDecal.apply(this, arguments);
+  };
+
+  var _spray = Decals.spray;
+  Decals.spray = function (point, dir, count, dmg) {
+    if (READY) {
+      if (CTX.entry) {
+        var e = CTX.entry, back = backDir(e.n, e.d);
+        entryBurst(point, back, e.dmg, e.w);
+        return _spray.call(this, point, back, count, dmg);       // droplets leave toward the shooter
+      }
+      if (CTX.exit) {
+        var x = CTX.exit; CTX.exit = null;
+        var n = x.n.clone();
+        var fd = x.d ? x.d.clone().multiplyScalar(0.75).addScaledVector(n, 0.25) : n;
+        if (fd.lengthSq() < 1e-6) fd.set(0, 0, 1);
+        fd.normalize();
+        exitBurst(point, fd, x.eff);
+        return _spray.apply(this, arguments);
+      }
+      genericBurst(point, dir, count);
+    }
+    return _spray.apply(this, arguments);
+  };
+
+  // ---------- per-frame ----------
+  function inSolid(x, y, z) {
+    var cs = GameMap.colliders;
+    for (var i = 0; i < cs.length; i++) {
+      var c = cs[i];
+      if (c.human || c.ramp) continue;
+      if (x > c.min.x && x < c.max.x && z > c.min.z && z < c.max.z && y > c.bot && y < c.top) return true;
+    }
+    return false;
+  }
+
+  function updateDroplets() {
+    var L = Decals.droplets, n = L.length;
+    for (var i = 0; i < n; i++) {
+      var d = L[i], m = d.mesh, v = d.vel;
+      var sp = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+      if (d._b === undefined) { d._b = m.scale.x; d._s = Math.random(); }
+      if (sp < 0.6) continue;
+      var dx = v.x / sp, dy = v.y / sp, dz = v.z / sp;
+      tmpV.set(dx, dy, dz);
+      m.quaternion.setFromUnitVectors(vUp, tmpV);
+      m.scale.set(d._b, d._b * (1 + Math.min(1.4, sp * 0.1)), d._b);
+      var len = Math.min(0.35, sp * 0.04) * (0.7 + 0.3 * d._b);
+      var al = clamp((sp - 0.6) / 2.2, 0, 1) * 0.9 * Math.min(1, d.life * 3);
+      pushRibbon(m.position.x, m.position.y, m.position.z, dx, dy, dz, len, 0.0105 * d._b * 0.9, al, d._s);
+    }
+  }
+
+  function updateStreaks(dt) {
+    var a = STK.d, n = STK.n, i = 0, drag = Math.exp(-dt * 0.6);
+    while (i < n) {
+      var o = i * 12, age = a[o + 6] + dt, dead = age >= a[o + 7];
+      if (!dead) {
+        a[o + 6] = age;
+        a[o + 3] *= drag; a[o + 5] *= drag; a[o + 4] = a[o + 4] * drag - 9.8 * 0.9 * dt;
+        a[o] += a[o + 3] * dt; a[o + 1] += a[o + 4] * dt; a[o + 2] += a[o + 5] * dt;
+        var x = a[o], y = a[o + 1], z = a[o + 2];
+        if (y < 0.006) {
+          dead = true;
+          var vx = a[o + 3], vz = a[o + 5], sp = Math.sqrt(vx * vx + a[o + 4] * a[o + 4] + vz * vz);
+          if (sp > 1.5 && Math.random() < 0.3) {
+            var hl = Math.hypot(vx, vz) || 1;
+            Decals.pool(x, 0, z, { x: vx / hl, z: vz / hl }, sp, Math.abs(a[o + 4]) / sp, true);
+          }
+        } else if (y < -5 || inSolid(x, y, z)) dead = true;
+      }
+      if (dead) {
+        n--;
+        if (i !== n) { var s = n * 12; for (var k = 0; k < 12; k++) a[o + k] = a[s + k]; }
+        continue;
+      }
+      var wx = a[o + 3], wy = a[o + 4], wz = a[o + 5];
+      var spd = Math.sqrt(wx * wx + wy * wy + wz * wz);
+      if (spd > 0.1) {
+        var f = a[o + 6] / a[o + 7];
+        var len = clamp(spd * 0.035, 0.02, 0.28);
+        pushRibbon(a[o], a[o + 1], a[o + 2], wx / spd, wy / spd, wz / spd, len, a[o + 8], a[o + 10] * Math.min(1, (1 - f) * 1.5), a[o + 9]);
+      }
+      i++;
+    }
+    STK.n = n;
+  }
+
+  function updateMist(dt) {
+    var a = MIST.d, n = MIST.n, i = 0, dk = Math.exp(-dt * 3.2);
+    while (i < n) {
+      var o = i * 12, age = a[o + 6] + dt, dead = age >= a[o + 7];
+      if (!dead) {
+        a[o + 6] = age;
+        a[o + 3] *= dk; a[o + 4] = a[o + 4] * dk - 1.2 * dt; a[o + 5] *= dk;
+        a[o] += a[o + 3] * dt; a[o + 1] += a[o + 4] * dt; a[o + 2] += a[o + 5] * dt;
+        if (a[o + 1] < 0.004) dead = true;
+      }
+      if (dead) {
+        n--;
+        if (i !== n) { var s = n * 12; for (var k = 0; k < 12; k++) a[o + k] = a[s + k]; }
+        continue;
+      }
+      var f = age / a[o + 7];
+      var p = i * 3;
+      MIST.pos[p] = a[o]; MIST.pos[p + 1] = a[o + 1]; MIST.pos[p + 2] = a[o + 2];
+      MIST.size[i] = a[o + 8] + (a[o + 9] - a[o + 8]) * Math.sqrt(f);
+      MIST.alpha[i] = a[o + 11] * Math.pow(1 - f, 1.4) * Math.min(1, age * 18);
+      MIST.seed[i] = a[o + 10];
+      i++;
+    }
+    MIST.n = n;
+    MIST.geo.setDrawRange(0, n);
+    MIST.pts.visible = n > 0;
+    if (n > 0) {
+      var at = MIST.geo.attributes;
+      at.position.updateRange.offset = 0; at.position.updateRange.count = n * 3; at.position.needsUpdate = true;
+      at.aSize.updateRange.offset = 0; at.aSize.updateRange.count = n; at.aSize.needsUpdate = true;
+      at.aAlpha.updateRange.offset = 0; at.aAlpha.updateRange.count = n; at.aAlpha.needsUpdate = true;
+      at.aSeed.updateRange.offset = 0; at.aSeed.updateRange.count = n; at.aSeed.needsUpdate = true;
+    }
+  }
+
+  var errOnce = false;
+  function update(dt) {
+    if (!READY) return;
+    updateEnv(dt);
+    CTX.exit = null;
+    if (dt <= 0) return;
+    updatePools(dt);
+    camP.copy(Game.camera.position);
+    RB.n = 0;
+    updateDroplets();
+    updateStreaks(dt);
+    updateMist(dt);
+    RB.geo.setDrawRange(0, RB.n * 6);
+    RB.mesh.visible = RB.n > 0;
+    if (RB.n > 0) {
+      var at = RB.geo.attributes;
+      at.position.updateRange.offset = 0; at.position.updateRange.count = RB.n * 12; at.position.needsUpdate = true;
+      at.aData.updateRange.offset = 0; at.aData.updateRange.count = RB.n * 8; at.aData.needsUpdate = true;
+    }
+  }
+
+  var _du = Decals.update;
+  Decals.update = function (dt) {
+    var r = _du.call(this, dt);
+    try { update(dt); }
+    catch (e) { if (!errOnce) { errOnce = true; console.error('bloodFX update:', e); } }
+    return r;
+  };
+
+  // ---------- init (after Game.init has built the scene and Decals.init has run) ----------
+  function init() {
+    var scene = Game.scene;
+
+    // droplet heads: smoother and glossier
+    Decals.dropletGeo = new THREE.SphereGeometry(0.011, 10, 8);
+    Decals.dropletMat = new THREE.MeshPhysicalMaterial({
+      color: 0x4a0508, roughness: 0.08, metalness: 0, clearcoat: 1.0, clearcoatRoughness: 0.05
+    });
+
+    // streak ribbons
+    var cap = RB.cap, i;
+    RB.pos = new Float32Array(cap * 12); RB.uv = new Float32Array(cap * 8); RB.data = new Float32Array(cap * 8);
+    var idx = new Uint16Array(cap * 6);
+    for (i = 0; i < cap; i++) {
+      var u = i * 8, b = i * 4, k = i * 6;
+      RB.uv[u] = -1; RB.uv[u + 1] = 0; RB.uv[u + 2] = 1; RB.uv[u + 3] = 0;
+      RB.uv[u + 4] = -1; RB.uv[u + 5] = 1; RB.uv[u + 6] = 1; RB.uv[u + 7] = 1;
+      idx[k] = b; idx[k + 1] = b + 1; idx[k + 2] = b + 2; idx[k + 3] = b + 1; idx[k + 4] = b + 3; idx[k + 5] = b + 2;
+    }
+    RB.geo = new THREE.BufferGeometry();
+    RB.geo.setAttribute('position', new THREE.BufferAttribute(RB.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    RB.geo.setAttribute('aUV', new THREE.BufferAttribute(RB.uv, 2));
+    RB.geo.setAttribute('aData', new THREE.BufferAttribute(RB.data, 2).setUsage(THREE.DynamicDrawUsage));
+    RB.geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    RB.geo.setDrawRange(0, 0);
+    var ribMat = new THREE.ShaderMaterial({
+      uniforms: { uLit: G.uLit, uFogCol: G.uFogCol, uFogNear: G.uFogNear, uFogFar: G.uFogFar },
+      vertexShader: RIB_VS, fragmentShader: RIB_FS,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide
+    });
+    RB.mesh = new THREE.Mesh(RB.geo, ribMat);
+    RB.mesh.frustumCulled = false; RB.mesh.renderOrder = 5; RB.mesh.visible = false;
+    scene.add(RB.mesh);
+
+    // mist points
+    MIST.d = new Float32Array(MIST.cap * 12); STK.d = new Float32Array(STK.cap * 12);
+    MIST.pos = new Float32Array(MIST.cap * 3); MIST.size = new Float32Array(MIST.cap);
+    MIST.alpha = new Float32Array(MIST.cap); MIST.seed = new Float32Array(MIST.cap);
+    MIST.geo = new THREE.BufferGeometry();
+    MIST.geo.setAttribute('position', new THREE.BufferAttribute(MIST.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    MIST.geo.setAttribute('aSize', new THREE.BufferAttribute(MIST.size, 1).setUsage(THREE.DynamicDrawUsage));
+    MIST.geo.setAttribute('aAlpha', new THREE.BufferAttribute(MIST.alpha, 1).setUsage(THREE.DynamicDrawUsage));
+    MIST.geo.setAttribute('aSeed', new THREE.BufferAttribute(MIST.seed, 1).setUsage(THREE.DynamicDrawUsage));
+    MIST.geo.setDrawRange(0, 0);
+    var mistMat = new THREE.ShaderMaterial({
+      uniforms: { uLit: G.uLit, uFogCol: G.uFogCol, uFogNear: G.uFogNear, uFogFar: G.uFogFar, uPx: G.uPx },
+      vertexShader: MIST_VS, fragmentShader: MIST_FS,
+      transparent: true, depthWrite: false
+    });
+    MIST.pts = new THREE.Points(MIST.geo, mistMat);
+    MIST.pts.frustumCulled = false; MIST.pts.renderOrder = 6; MIST.pts.visible = false;
+    scene.add(MIST.pts);
+
+    READY = true;
+  }
+
+  window.addEventListener('load', function () {
+    try { init(); }
+    catch (e) { READY = false; console.error('bloodFX init failed, using the old blood:', e); }
+  });
+})();
+</script>
 </body>
 </html>
