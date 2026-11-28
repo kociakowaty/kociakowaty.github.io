@@ -526,7 +526,7 @@ var ViewModel = {
       if (G.l) { rigL = this.makeHand(false, G.l); model.root.add(rigL.root); }
       c = this._gunCache[w.id] = {
         model: model, rigR: rigR, rigL: rigL,
-        adsCur: new THREE.Vector3(0, -SG.y, -(0.2 + SG.rz))
+        adsCur: new THREE.Vector3(0, -SG.y, SG.adsZ != null ? SG.adsZ : -(0.2 + SG.rz))
       };
     }
     this.gunHolder.add(c.model.root);
@@ -689,20 +689,44 @@ var ViewModel = {
 
     var sprintT = input.running && !input.aiming ? 1 : 0;
     this.sprintLerp += (sprintT - this.sprintLerp) * Math.min(1, dt * 8);
-    var sp = this.sprintLerp;
+    // a spring on the hold amount gives the pose a little overshoot and lag, so it feels alive
+    if (!this.holdSpring) this.holdSpring = new Spring(0);
+    this.holdSpring.update(this.sprintLerp, 70, 9, dt);
+    var sp = Math.max(0, Math.min(1.08, this.holdSpring.x));
+    var kind = this.current ? this.current.def.model : 'rifle';
+
+    // walk cycle while the gun is held: a side-to-side sway once per step, a bounce on each footfall,
+    // and a roll / pitch / yaw that follow the stride
+    var step = this.bobT;
+    var wkX = Math.sin(step) * 0.03;
+    var wkY = -Math.abs(Math.cos(step)) * 0.035 + Math.sin(step * 2) * 0.006;
+    var wkZ = Math.sin(step * 2) * 0.012;
+    var wkRoll = Math.sin(step) * 0.10;
+    var wkPitch = Math.cos(step * 2) * 0.05;
+    var wkYaw = Math.sin(step) * 0.07;
+    var walkAmt = sp * this.bobAmt;
+    var idle = Math.sin(input.time * 1.1) * 0.01 * sp;
+
+    // holster poses: pistol barrel points up, rifle / shotgun / SMG barrel points left
+    var upPose = kind === 'pistol';
+    var poseRx = upPose ? sp * 1.25 : sp * 0.12;
+    var poseRy = upPose ? 0 : sp * 1.45;
+    var poseX = upPose ? 0 : -sp * 0.12;
+    var poseY = upPose ? -sp * 0.06 : -sp * 0.05;
+    var poseZ = upPose ? sp * 0.06 : sp * 0.05;
 
     var leanRoll = input.leanAmt || 0;
 
     var g = this.gunHolder;
     g.position.set(
-      pos.x + bobX + swx * 0.6 + pa.x + (rY * 0.5),
-      pos.y + bobY + swy * 0.6 + breathe - sp * 0.12 + pa.y,
-      pos.z + rZ * 0.8 + pa.z + sp * 0.05
+      pos.x + bobX + swx * 0.6 + pa.x + (rY * 0.5) + poseX + wkX * walkAmt,
+      pos.y + bobY + swy * 0.6 + breathe + poseY + wkY * walkAmt + idle + pa.y,
+      pos.z + rZ * 0.8 + pa.z + poseZ + wkZ * walkAmt
     );
     g.rotation.set(
-      rP * 0.9 + pa.rx - sp * 0.35 - (input.freePitch || 0),
-      rY * 0.6 + swx * 0.4 + sp * 0.25 - (input.freeYaw || 0),
-      leanRoll * 0.4 * (1 - this.aim) + swx * 0.25 + Math.sin(this.bobT) * 0.01 * this.bobAmt
+      rP * 0.9 + pa.rx + poseRx + wkPitch * walkAmt - (input.freePitch || 0),
+      rY * 0.6 + swx * 0.4 + poseRy + wkYaw * walkAmt - (input.freeYaw || 0),
+      leanRoll * 0.4 * (1 - this.aim) + swx * 0.25 + Math.sin(this.bobT) * 0.01 * this.bobAmt + wkRoll * walkAmt
     );
 
     if (this.shotTimer > 0) {
@@ -8767,6 +8791,8 @@ Gait.update = function (H, B, dt) {
       var np = [p[0], p[1] - mid, p[2]];
       if (onA) { J.a = NB; J.pa = np; } else { J.b = NB; J.pb = np; }
     }
+    // joints changed hands: drop every cached neighbour list so skinning sees the new connections
+    H.bodies.forEach(function (x) { x._limbJ = null; });
     // existing wounds follow whichever piece they are on
     for (i = 0; i < H.wounds.length; i++) {
       var wr = H.wounds[i];
@@ -8836,6 +8862,7 @@ Gait.update = function (H, B, dt) {
     }
     D.cutBodies.length = 0; D.rebound.length = 0;
     D.skins = D.skins.filter(function (s) { return !(s.body && s.body.name.indexOf('cut_') === 0); });
+    H.bodies.forEach(function (x) { x._limbJ = null; });
     if (H.allBodies) {
       H.bodies = H.allBodies.slice();
       H.jointsAll = H.allJoints.slice();
@@ -10316,6 +10343,8 @@ Gait.update = function (H, B, dt) {
       var np = [p[0], p[1] - mid, p[2]];
       if (onA) { J.a = NB; J.pa = np; } else { J.b = NB; J.pb = np; }
     }
+    // joints changed hands: drop every cached neighbour list so skinning sees the new connections
+    H.bodies.forEach(function (x) { x._limbJ = null; });
     // existing wounds follow whichever piece they are on
     for (i = 0; i < H.wounds.length; i++) {
       var wr = H.wounds[i];
@@ -10385,6 +10414,7 @@ Gait.update = function (H, B, dt) {
     }
     D.cutBodies.length = 0; D.rebound.length = 0;
     D.skins = D.skins.filter(function (s) { return !(s.body && s.body.name.indexOf('cut_') === 0); });
+    H.bodies.forEach(function (x) { x._limbJ = null; });
     if (H.allBodies) {
       H.bodies = H.allBodies.slice();
       H.jointsAll = H.allJoints.slice();
@@ -14287,11 +14317,11 @@ window.__vmPass2 = false; window.__plainRender = false;
 
   // Running pose per weapon (camera space, same space as hipPos). Tune these numbers to taste.
   var RUN = {
-    pistol:   { p: [0.25, -0.34, -0.20], r: [-1.25, 0.15, 0.00] },   // holstered: muzzle down, tucked at hip
+    pistol:   { p: [0.24, -0.20, -0.36], r: [1.40, 0.00, 0.00] },    // holstered: muzzle pointing UP, inside the frame
     magnum:   { p: [0.27, -0.36, -0.20], r: [-1.45, 0.10, 0.10] },
-    rifle:    { p: [0.20, -0.36, -0.32], r: [-0.22, 1.25, 0.00] },   // held low, barrel pointing left
-    shotgun:  { p: [0.18, -0.30, -0.36], r: [-0.50, 0.55, 0.00] },   // port arms, barrel across the body
-    smg:      { p: [0.22, -0.30, -0.28], r: [-0.95, 0.25, 0.10] },   // compact, muzzle down
+    rifle:    { p: [0.18, -0.21, -0.40], r: [-0.05, 1.50, 0.00] },   // barrel pointing left, inside the frame
+    shotgun:  { p: [0.18, -0.21, -0.42], r: [-0.05, 1.50, 0.00] },   // barrel pointing left across the body
+    smg:      { p: [0.20, -0.21, -0.38], r: [-0.05, 1.50, 0.00] },   // compact, barrel pointing left
     awp:      { p: [0.10, -0.22, -0.34], r: [-0.20, 0.50, 0.65] },   // slung diagonally across the chest
     tomahawk: { p: [0.34, -0.24, -0.34], r: [ 0.70, 0.00, 0.40] },   // blade up beside the shoulder
     katana:   { p: [0.30, -0.36, -0.24], r: [-1.10, -0.40, 0.00] },  // low at the side, blade down
@@ -14351,10 +14381,25 @@ window.__vmPass2 = false; window.__plainRender = false;
     if (cur && cur.model && !TPon && !busy) {
       var gh = this.gunHolder, pose = RUN[cur.id] || RUN.pistol;
       var q0 = gh.quaternion.clone(), p0 = gh.position.clone();
-      var ph = BOB.cyc * Math.PI * 2;
+      // Sway follows the viewmodel bob settings: speed scales the stride clock, amplitude scales the sway
+      var dCyc = BOB.cyc - (VMS.lastCyc != null ? VMS.lastCyc : BOB.cyc);
+      VMS.lastCyc = BOB.cyc;
+      VMS.swayC = (VMS.swayC || 0) + dCyc * ((window.Settings && Settings.vmBobSpeed != null) ? Settings.vmBobSpeed : 1);
+      var ph = VMS.swayC * Math.PI * 2;
+      var swK = (window.Settings && Settings.bobMul != null) ? Settings.bobMul : 1;
       var w = VMS.runW * (1 - this.aim);
-      var pT = new V3(pose.p[0] + Math.sin(ph) * 0.012, pose.p[1] - (1 - Math.cos(2 * ph)) * 0.008, pose.p[2]);
-      var qT = new Q4().setFromEuler(new E3(pose.r[0], pose.r[1], pose.r[2]));
+      // Walk-cycle sway: BOB.cyc only advances while moving, so the gun stays still when standing
+      var stepSway = Math.sin(ph), stepDrop = Math.abs(Math.cos(ph));
+      var pT = new V3(
+        pose.p[0] + stepSway * 0.035 * swK,                                  // side to side with each step
+        pose.p[1] - stepDrop * 0.030 * swK + Math.sin(2 * ph) * 0.010 * swK, // bounce, two dips per cycle
+        pose.p[2] + stepDrop * 0.012 * swK                                    // slight forward/back rock
+      );
+      var qT = new Q4().setFromEuler(new E3(
+        pose.r[0] - stepDrop * 0.06 * swK,                                   // pitch dips as the foot lands
+        pose.r[1] + stepSway * 0.09 * swK,                                   // yaw follows the swing
+        pose.r[2] + stepSway * 0.10 * swK                                    // roll sways with the body
+      ));
       gh.position.lerpVectors(p0, pT, w);
       gh.quaternion.copy(q0).slerp(qT, w);
 
@@ -17078,7 +17123,7 @@ window.__vmPass2 = false; window.__plainRender = false;
   // Sights, grips and iron-sight geometry the existing code looks up by model name
   SIGHTS.glock17 = { y: 0.125, rz: 0.03, fz: -0.13, base: 0.1 };
   SIGHTS.glock18 = { y: 0.125, rz: 0.03, fz: -0.13, base: 0.1 };
-  SIGHTS.m1911   = { y: 0.125, rz: 0.04, fz: -0.14, base: 0.1 };
+  SIGHTS.m1911   = { y: 0.125, rz: 0.04, fz: -0.14, base: 0.1, adsZ: -0.62 };   // adsZ: ADS distance from the eye (further out than the default)
   SIGHTS.spas12  = { y: 0.107, rz: 0.065, fz: -0.6, base: 0.05 };
   SIGHTS.m1014   = { y: 0.107, rz: 0.065, fz: -0.6, base: 0.05 };
   SIGHTS.r870    = { y: 0.107, rz: 0.065, fz: -0.6, base: 0.05 };
@@ -21379,6 +21424,7 @@ window.applyPixelRatio();
           from = vertebra(g, 0, -0.10 + i * 0.05, -0.075, 1.12); g.squash(from);
           if (i < 4) { from = disc(g, 0, -0.075 + i * 0.05, -0.075, 1.12); g.squash(from); }
         }
+        addOrgans(g, 'abdomen');
         break;
       case 'chest':
         for (i = 0; i < 6; i++) {
@@ -21400,6 +21446,7 @@ window.applyPixelRatio();
           }
         }
         from = g.n; g.box(0, 0.02, b0z(), 0.034, 0.21, 0.012, IVORY2); g.squash(from);
+        addOrgans(g, 'chest');
         for (var sc = -1; sc <= 1; sc += 2) {
           var cl = [], m;
           for (m = 0; m <= 8; m++) { var tt = m / 8; cl.push([sc * mix(0.02, 0.15, tt), 0.14 - 0.04 * tt + 0.012 * Math.sin(tt * Math.PI * 2), mix(0.1, -0.012, tt) + 0.012 * Math.sin(tt * Math.PI)]); }
@@ -21407,6 +21454,34 @@ window.applyPixelRatio();
         }
         break;
     }
+  }
+  // Internal organs, built into the same bone mesh as the skeleton so they bend with the torso and are cut with it.
+  // Local frame: +z is the front of the body.
+  function addOrgans(g, kind) {
+    var from = g.n, s;
+    if (kind === 'chest') {
+      var LUNG = [0.74, 0.47, 0.47], LUNG2 = [0.6, 0.34, 0.36], HEART = [0.46, 0.06, 0.08], VESSEL = [0.64, 0.16, 0.15], AIRWAY = [0.84, 0.76, 0.72];
+      for (s = -1; s <= 1; s += 2) {
+        g.sphere(s * 0.055, 0.0, -0.012, 0.045, 0.10, 0.06, LUNG);            // upper lobe
+        g.sphere(s * 0.058, -0.05, 0.0, 0.036, 0.042, 0.040, LUNG2);          // lower lobe
+      }
+      g.sphere(-0.02, -0.02, 0.03, 0.040, 0.05, 0.036, HEART, [0.2, 0, -0.5]);  // heart, tilted to one side
+      g.tubePath([[-0.02, 0.02, 0.03], [-0.01, 0.07, 0.0], [0.01, 0.11, -0.02]], 0.011, VESSEL, 6);   // aorta
+      g.cyl(0.0, 0.085, -0.02, 0.011, 0.011, 0.09, AIRWAY, 1);                // trachea
+    } else if (kind === 'abdomen') {
+      var STOMACH = [0.72, 0.42, 0.40], LIVER = [0.44, 0.16, 0.12], GUT = [0.82, 0.56, 0.5];
+      g.sphere(0.04, 0.03, 0.045, 0.05, 0.04, 0.04, STOMACH, [0, 0, 0.3]);      // stomach
+      g.sphere(-0.05, 0.045, 0.04, 0.075, 0.04, 0.05, LIVER, [0, 0, 0.2]);      // liver
+      for (var k = 0; k < 3; k++) {                                              // coiled small intestine
+        var pts = [], j;
+        for (j = 0; j <= 10; j++) {
+          var a = j / 10 * Math.PI * 2;
+          pts.push([0.03 * Math.cos(a), -0.075 + k * 0.03, 0.05 + 0.03 * Math.sin(a)]);
+        }
+        g.tubePath(pts, 0.013, GUT, 6);
+      }
+    }
+    g.squash(from);
   }
   function b0z() { return 0.104; }
 
@@ -25509,11 +25584,19 @@ window.applyPixelRatio();
   if (window.Audio && !window.__audioReuse) {
     window.__audioReuse = true;
     var NativeAudio = window.Audio, audioCache = {};
+    // A small pool per sound: a shot takes an element that is not playing, so earlier shots keep ringing
+    var POOL_MAX = 12;
     var Reused = function (src) {
       if (!src) return new NativeAudio();
-      var a = audioCache[src];
-      if (!a) { a = audioCache[src] = new NativeAudio(src); a.preload = 'auto'; }
-      try { a.pause(); a.currentTime = 0; } catch (e) {}
+      var pool = audioCache[src] || (audioCache[src] = []);
+      for (var i = 0; i < pool.length; i++) {
+        var p = pool[i];
+        if (p.paused || p.ended) { try { p.currentTime = 0; } catch (e) {} return p; }
+      }
+      var a = new NativeAudio(src);
+      a.preload = 'auto';
+      if (pool.length < POOL_MAX) pool.push(a);
+      else { try { pool[0].pause(); } catch (e) {} pool.push(a); pool.shift(); }   // pool full: recycle the oldest
       return a;
     };
     Reused.prototype = NativeAudio.prototype;
@@ -25810,7 +25893,8 @@ window.applyPixelRatio();
       var ox = 0, oy = 0, oz = 0, wSelf = 1;
       for (var k = 0; k < js.length; k++) {
         var J = js[k], nb = J.nb;
-        if (!nb._skM) continue;
+        // a neighbour that was blown off (head, arm) is no longer attached: its matrix would drag this skin away
+        if (!nb._skM || nb.detached || nb.removed) continue;
         var q = (ry - J.wy) * J.dir;                  // distance toward the neighbour, from the joint
         var w = 0.5 * smooth((q + BAND) / BAND);
         if (w <= 0) continue;
@@ -25845,6 +25929,375 @@ window.applyPixelRatio();
       }
     }
     return r;
+  };
+})();
+</script>
+<script>
+// ===================== HEADLESS NECK =====================
+// A head shot takes the head off, but the neck skin still rises to where the head was and shows as a stray
+// strip. Hide the neck skin while the head is gone; it comes back on respawn.
+(function () {
+  'use strict';
+  if (window.__headlessNeckFix) return;
+  window.__headlessNeckFix = true;
+
+  var _hitHN = Humans.hit;
+  Humans.hit = function (H, part) {
+    var r = _hitHN.apply(this, arguments);
+    if (part === 'head' && H.dead) H._headGone = true;
+    return r;
+  };
+
+  var _huHN = Humans.update;
+  Humans.update = function (dt) {
+    var r = _huHN.apply(this, arguments);
+    var L = Humans.list;
+    for (var i = 0; i < L.length; i++) {
+      var H = L[i];
+      if (!H._dw || !H._dw.skins) continue;
+      if (!H.dead) H._headGone = false;
+      var show = !H._headGone || !!H._headEaten;
+      for (var k = 0; k < H._dw.skins.length; k++) {
+        var sk = H._dw.skins[k];
+        if (!sk.body || sk.body.name !== 'neck') continue;
+        if (sk.mesh) sk.mesh.visible = show;
+        if (sk.back) sk.back.visible = show && !!sk.hasHole;
+      }
+    }
+    return r;
+  };
+})();
+</script>
+<script>
+// ===================== INTESTINES =====================
+// After POP_HITS shots to the abdomen, the intestines spill out of the newest wound as a rope: it bursts out along
+// the wound normal, then hangs by gravity and lies on the floor. The wound point follows the body.
+(function () {
+  'use strict';
+  if (window.__intestineFix) return;
+  window.__intestineFix = true;
+
+  var N = 18, SEG = 0.03, RAD = 0.014, POP_HITS = 3, FLOOR = 0.014, GRAV = 9.8, DAMP = 0.985;
+  var MAT = new THREE.MeshStandardMaterial({ color: 0xc98a80, roughness: 0.38, metalness: 0, emissive: 0x2a0806 });
+
+  function abdWounds(H) {
+    var out = [], W = H.wounds || [];
+    for (var i = 0; i < W.length; i++) {
+      if (W[i].b && /^(cut_)*abdomen/.test(W[i].b.name) && W[i].lp) out.push(W[i]);
+    }
+    return out;
+  }
+  function anchorOf(w) {
+    var p = Vx.add(w.b.x, Qt.rot(w.b.q, w.lp));
+    return [p[0], p[1], p[2]];
+  }
+  function outOf(w) {
+    var d = Qt.rot(w.b.q, w.ld || [0, 0, 1]), l = Math.hypot(d[0], d[1], d[2]) || 1;
+    return [d[0] / l, d[1] / l, d[2] / l];
+  }
+
+  function spawn(H, w) {
+    var a = anchorOf(w), o = outOf(w);
+    var P = new Float32Array(N * 3), Q = new Float32Array(N * 3), i;
+    for (i = 0; i < N; i++) {
+      var k = i / (N - 1), sp = (2.6 + Math.random() * 1.6) * (1 - 0.6 * k);   // the coil bursts outward, the tail trails
+      var x = a[0] + o[0] * SEG * i * 0.3, y = a[1] + o[1] * SEG * i * 0.3, z = a[2] + o[2] * SEG * i * 0.3;
+      P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z;
+      var vx = o[0] * sp + (Math.random() - 0.5), vy = o[1] * sp + Math.random() * 0.8, vz = o[2] * sp + (Math.random() - 0.5);
+      Q[i * 3] = x - vx / 60; Q[i * 3 + 1] = y - vy / 60; Q[i * 3 + 2] = z - vz / 60;
+    }
+    var mesh = new THREE.Mesh(new THREE.BufferGeometry(), MAT);
+    mesh.frustumCulled = false;
+    mesh.castShadow = true;
+    Humans.scene.add(mesh);
+    H._guts = { w: w, P: P, Q: Q, mesh: mesh };
+  }
+
+  function removeGuts(H) {
+    var G = H._guts;
+    if (!G) return;
+    if (G.mesh) {
+      if (G.mesh.parent) G.mesh.parent.remove(G.mesh);
+      if (G.mesh.geometry) G.mesh.geometry.dispose();
+    }
+    H._guts = null;
+  }
+
+  function step(G, dt) {
+    var P = G.P, Q = G.Q, a = anchorOf(G.w), i, it, sub = 4, h = dt / sub;
+    for (var s = 0; s < sub; s++) {
+      // Verlet integration, gravity on every node except the anchored first one
+      for (i = 1; i < N; i++) {
+        var x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
+        P[i * 3] = x + (x - Q[i * 3]) * DAMP;
+        P[i * 3 + 1] = y + (y - Q[i * 3 + 1]) * DAMP - GRAV * h * h;
+        P[i * 3 + 2] = z + (z - Q[i * 3 + 2]) * DAMP;
+        Q[i * 3] = x; Q[i * 3 + 1] = y; Q[i * 3 + 2] = z;
+      }
+      P[0] = a[0]; P[1] = a[1]; P[2] = a[2]; Q[0] = a[0]; Q[1] = a[1]; Q[2] = a[2];
+      // keep neighbouring nodes SEG apart
+      for (it = 0; it < 6; it++) {
+        for (i = 0; i < N - 1; i++) {
+          var dx = P[(i + 1) * 3] - P[i * 3], dy = P[(i + 1) * 3 + 1] - P[i * 3 + 1], dz = P[(i + 1) * 3 + 2] - P[i * 3 + 2];
+          var L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6, f = (L - SEG) / L;
+          var wA = i === 0 ? 0 : 0.5, wB = i === 0 ? 1 : 0.5;     // the anchor does not move
+          P[i * 3] += dx * f * wA; P[i * 3 + 1] += dy * f * wA; P[i * 3 + 2] += dz * f * wA;
+          P[(i + 1) * 3] -= dx * f * wB; P[(i + 1) * 3 + 1] -= dy * f * wB; P[(i + 1) * 3 + 2] -= dz * f * wB;
+        }
+      }
+      // floor: the loose coil lies on it and drags
+      for (i = 1; i < N; i++) {
+        if (P[i * 3 + 1] < FLOOR) {
+          P[i * 3 + 1] = FLOOR;
+          Q[i * 3] = P[i * 3] - (P[i * 3] - Q[i * 3]) * 0.6;
+          Q[i * 3 + 2] = P[i * 3 + 2] - (P[i * 3 + 2] - Q[i * 3 + 2]) * 0.6;
+        }
+      }
+    }
+    // rebuild the tube along the nodes
+    var pts = [];
+    for (i = 0; i < N; i++) pts.push(new THREE.Vector3(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]));
+    var geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), N * 2, RAD, 6, false);
+    G.mesh.geometry.dispose();
+    G.mesh.geometry = geo;
+  }
+
+  var _huG = Humans.update;
+  Humans.update = function (dt) {
+    var r = _huG.apply(this, arguments);
+    var L = Humans.list;
+    for (var i = 0; i < L.length; i++) {
+      var H = L[i];
+      if (H.removed) { removeGuts(H); continue; }
+      if (!H._guts && H._dw) {
+        var ws = abdWounds(H);
+        if (ws.length >= POP_HITS) spawn(H, ws[ws.length - 1]);
+      }
+      if (H._guts && dt > 0) step(H._guts, Math.min(dt, 1 / 30));
+    }
+    return r;
+  };
+
+  var _resG = Humans.respawn;
+  Humans.respawn = function (H) {
+    removeGuts(H);
+    return _resG.apply(this, arguments);
+  };
+})();
+</script>
+<script>
+// ===================== GIB HEAD (EATEN) =====================
+// A head shot tears the top of the head away. The head stays on its neck joint: the normal head meshes are hidden
+// and a torn bowl-shaped head rides on the head body (skull outside, flesh and brain inside, an eye, loose teeth and
+// a tongue at the front). Its meshes are hittable as head parts. Textures are PBR sets (colour, bump and roughness
+// maps), like the limb caps.
+(function () {
+  'use strict';
+  if (window.__gibHeadFix) return;
+  window.__gibHeadFix = true;
+
+  var TAU = Math.PI * 2, MATS = null;
+
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+
+  // colour, bump and roughness maps painted on canvas
+  function paintSet(kind) {
+    var N = 256, cs = [], k, i;
+    for (k = 0; k < 3; k++) { cs.push(document.createElement('canvas')); cs[k].width = cs[k].height = N; }
+    var c = cs[0].getContext('2d'), b = cs[1].getContext('2d'), r = cs[2].getContext('2d');
+    var base = { flesh: '#b5524b', tongue: '#a32a30', brain: '#c9a3a0', bone: '#d8cfb4' }[kind] || '#b5524b';
+    c.fillStyle = base; c.fillRect(0, 0, N, N);
+    b.fillStyle = '#808080'; b.fillRect(0, 0, N, N);
+    r.fillStyle = '#9a9a9a'; r.fillRect(0, 0, N, N);
+    for (i = 0; i < 9000; i++) {                                   // grain
+      var x = Math.random() * N, y = Math.random() * N, dark = Math.random() < 0.5;
+      c.fillStyle = dark ? 'rgba(60,5,10,0.10)' : 'rgba(255,190,170,0.08)';
+      c.fillRect(x, y, 2, 2);
+      var g = dark ? 90 : 170;
+      b.fillStyle = 'rgb(' + g + ',' + g + ',' + g + ')';
+      b.fillRect(x, y, 2, 2);
+    }
+    for (i = 0; i < 70; i++) {                                     // veins and cracks
+      var px = Math.random() * N, py = Math.random() * N, s;
+      c.beginPath(); c.moveTo(px, py); b.beginPath(); b.moveTo(px, py);
+      for (s = 0; s < 8; s++) {
+        px += (Math.random() - 0.5) * 14; py += (Math.random() - 0.5) * 14;
+        c.lineTo(px, py); b.lineTo(px, py);
+      }
+      c.strokeStyle = 'rgba(80,6,12,0.55)'; c.lineWidth = 1 + Math.random() * 1.5; c.stroke();
+      b.strokeStyle = 'rgb(30,30,30)'; b.lineWidth = 1.2; b.stroke();
+    }
+    for (i = 0; i < 26; i++) {                                     // wet blood runs: darker and glossier
+      var sx = Math.random() * N, sy = Math.random() * N * 0.5, len = 30 + Math.random() * 90, w2 = 2 + Math.random() * 5;
+      var gr = c.createLinearGradient(0, sy, 0, sy + len);
+      gr.addColorStop(0, 'rgba(110,6,12,0.7)'); gr.addColorStop(1, 'rgba(110,6,12,0)');
+      c.fillStyle = gr; c.fillRect(sx, sy, w2, len);
+      var gr2 = r.createLinearGradient(0, sy, 0, sy + len);
+      gr2.addColorStop(0, 'rgb(20,20,20)'); gr2.addColorStop(1, 'rgba(20,20,20,0)');
+      r.fillStyle = gr2; r.fillRect(sx, sy, w2, len);
+    }
+    function tex(cv) { var t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; }
+    return { map: tex(cs[0]), bump: tex(cs[1]), rough: tex(cs[2]) };
+  }
+
+  function gore(kind, extra) {
+    var t = paintSet(kind);
+    var o = { map: t.map, bumpMap: t.bump, bumpScale: 1.6, roughnessMap: t.rough, roughness: 1, metalness: 0,
+      side: THREE.DoubleSide, emissive: 0x1a0404 };
+    for (var k in extra) o[k] = extra[k];
+    return new THREE.MeshStandardMaterial(o);
+  }
+
+  function mats() {
+    if (MATS) return MATS;
+    MATS = {
+      skin: gore('flesh'),
+      bone: gore('bone', { bumpScale: 0.8 }),
+      brain: gore('brain', { bumpScale: 2.4, color: 0xb0ad74 }),     // olive-grey brain
+      tongue: gore('tongue', { bumpScale: 1.0 }),
+      meat: gore('flesh', { color: 0x7a1414 }),
+      teeth: new THREE.MeshStandardMaterial({ color: 0xcfc3a0, roughness: 0.3, metalness: 0 }),
+      eyeWhite: new THREE.MeshStandardMaterial({ color: 0xe6d6d2, roughness: 0.15, metalness: 0 }),
+      iris: new THREE.MeshStandardMaterial({ color: 0x7a4118, roughness: 0.25, metalness: 0 }),
+      pupil: new THREE.MeshStandardMaterial({ color: 0x0a0606, roughness: 0.3, metalness: 0 }),
+      blood: new THREE.MeshStandardMaterial({ color: 0x5a0606, roughness: 0.12, metalness: 0 })
+    };
+    return MATS;
+  }
+
+  function add(g, geo, mat, x, y, z, rx, ry, rz, sx, sy, sz) {
+    var m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0);
+    if (sx !== undefined) m.scale.set(sx, sy, sz);
+    g.add(m);
+    return m;
+  }
+
+  // torn surface: each vertex pushed a little at random; the upper rim is pulled outward
+  function jag(geo, amt, rimAmt) {
+    var p = geo.attributes.position, i;
+    for (i = 0; i < p.count; i++) {
+      var x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      var d = amt * (Math.random() - 0.5) * 2;
+      if (rimAmt && y > 0.02) d += rimAmt * (Math.random() - 0.3);
+      var l = Math.hypot(x, y, z) || 1;
+      p.setXYZ(i, x + x / l * d, y + y / l * d, z + z / l * d);
+    }
+    p.needsUpdate = true;
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  function strand(g, pts, rad, mat) {
+    var curve = new THREE.CatmullRomCurve3(pts.map(function (p) { return new THREE.Vector3(p[0], p[1], p[2]); }));
+    add(g, new THREE.TubeGeometry(curve, 12, rad, 6, false), mat, 0, 0, 0);
+  }
+
+  // the eaten head, origin at the centre of the head (where the normal head meshes were)
+  function buildHead() {
+    var M = mats(), g = new THREE.Group(), i;
+
+    // flesh lining, seen from inside the bowl
+    add(g, jag(new THREE.SphereGeometry(0.091, 24, 16, 0, TAU, 1.2, Math.PI - 1.4), 0.004, 0.01), M.skin, 0, 0, 0);
+    // skull bowl: the bottom and sides, its top torn away
+    add(g, jag(new THREE.SphereGeometry(0.097, 24, 14, 0, TAU, 1.2, Math.PI - 1.4), 0.005, 0.008), M.bone, 0, 0, 0);
+    // brain, pushing up out of the bowl
+    add(g, jag(new THREE.SphereGeometry(0.07, 20, 14), 0.006), M.brain, 0, 0.035, -0.005, 0, 0, 0, 1, 0.6, 1.1);
+
+    // eye lying in the bowl
+    add(g, new THREE.SphereGeometry(0.022, 16, 12), M.eyeWhite, -0.045, 0.004, 0.03);
+    add(g, new THREE.SphereGeometry(0.012, 12, 10), M.iris, -0.045, 0.004, 0.05, 0, 0, 0, 1, 1, 0.4);
+    add(g, new THREE.SphereGeometry(0.005, 8, 6), M.pupil, -0.045, 0.004, 0.058);
+
+    // loose broken teeth lying in the bowl
+    for (i = 0; i < 6; i++) {
+      add(g, new THREE.BoxGeometry(0.011, 0.014, 0.01), M.teeth, rnd(-0.05, 0.05), rnd(-0.035, 0.0), rnd(-0.04, 0.04),
+        rnd(0, 3), rnd(0, 3), rnd(0, 3));
+    }
+    // upper teeth along the front rim, outside the bowl wall so they show
+    for (i = 0; i < 8; i++) {
+      var th = (i === 2 || i === 6) ? 0.008 : rnd(0.012, 0.017);
+      add(g, new THREE.BoxGeometry(0.011, th, 0.012), M.teeth, (i - 3.5) * 0.0125, -0.05 - th / 2, 0.089);
+    }
+    // tongue hanging over the front of the bowl
+    add(g, new THREE.SphereGeometry(1, 16, 10), M.tongue, 0, -0.07, 0.1, 0.5, 0, 0, 0.03, 0.012, 0.07);
+    // meat on the floor of the bowl
+    add(g, new THREE.CircleGeometry(0.03, 14), M.meat, 0, -0.09, 0, -Math.PI / 2, 0, 0);
+
+    // blood running down the outside of the rim
+    for (i = 0; i < 6; i++) {
+      var a = rnd(0, TAU), rr = rnd(0.085, 0.095), x0 = Math.cos(a) * rr, z0 = Math.sin(a) * rr, y0 = rnd(0.02, 0.035), len = rnd(0.05, 0.14);
+      strand(g, [[x0, y0, z0], [x0 * 1.01, y0 - len * 0.5, z0 * 1.01], [x0 * 1.02, y0 - len, z0 * 1.02]], 0.0028, M.blood);
+    }
+    // spatter and chunks inside the bowl
+    for (i = 0; i < 14; i++) add(g, new THREE.SphereGeometry(rnd(0.003, 0.008), 6, 4), M.blood, rnd(-0.07, 0.07), rnd(-0.07, 0.05), rnd(-0.07, 0.07));
+    for (i = 0; i < 4; i++) add(g, jag(new THREE.SphereGeometry(rnd(0.008, 0.015), 6, 5), 0.003), i % 2 ? M.brain : M.bone, rnd(-0.06, 0.06), rnd(-0.03, 0.04), rnd(-0.06, 0.06));
+    return g;
+  }
+
+  // the head stays on its joint: hide the normal head meshes, add the eaten head to the head body
+  function eatHead(H, point, dir) {
+    var B = H.byName.head, pt = Vx.arr(point), dv = Vx.arr(dir);
+    var P = new THREE.Vector3(pt[0], pt[1], pt[2]), D = new THREE.Vector3(dv[0], dv[1], dv[2]);
+    H.cut.head = true;
+    H.vitalCut = true;
+    H._headEaten = true;
+
+    var old = [];
+    B.group.traverse(function (c) { if (c.isMesh && c.userData.target === H) old.push(c); });
+    removeAll(GameMap.solids, old);
+    removeAll(H.parts, old);
+    old.forEach(function (m) { m.visible = false; });
+    B.solidMeshes = (B.solidMeshes || []).concat(old);
+
+    var gm = buildHead(), gibMeshes = [];
+    gm.traverse(function (c) {
+      if (!c.isMesh) return;
+      c.userData.target = H; c.userData.part = 'head'; c.userData.limb = 'head';
+      gibMeshes.push(c);
+    });
+    B.group.add(gm);
+    GameMap.solids.push.apply(GameMap.solids, gibMeshes);
+    H.parts.push.apply(H.parts, gibMeshes);
+    B._gibHead = gm; B._gibMeshes = gibMeshes;
+
+    Decals.spray(P, D, 40, 60);
+    for (var d = 0; d < 40; d++) {
+      var v = Vx.norm([rnd(-0.5, 0.5), rnd(0.2, 0.8), rnd(-0.5, 0.5)]), sc = rnd(1.5, 6);
+      Decals.spawnDroplet(P.clone(), new THREE.Vector3(v[0] * sc, v[1] * sc, v[2] * sc), 1);
+    }
+  }
+
+  var _dis = Humans.dismember;
+  Humans.dismember = function (H, limb, point, dir) {
+    if (limb !== 'head' || !H || !H.byName || !H.byName.head || (H.cut && H.cut.head)) return _dis.apply(this, arguments);
+    eatHead(H, point, dir);
+  };
+
+  // respawn: put the normal head back and remove the eaten one
+  var _resGH = Humans.respawn;
+  Humans.respawn = function (H) {
+    var bodies = H.allBodies || H.bodies || [], i;
+    for (i = 0; i < bodies.length; i++) {
+      var b = bodies[i], gibs = b._gibMeshes || [];
+      if (b._gibHead) {
+        if (b._gibHead.parent) b._gibHead.parent.remove(b._gibHead);
+        removeAll(GameMap.solids, gibs);
+        removeAll(H.parts, gibs);
+        b._gibHead = null; b._gibMeshes = null;
+      }
+      if (b.solidMeshes) {
+        b.solidMeshes.forEach(function (m) {
+          m.visible = true;
+          if (GameMap.solids.indexOf(m) < 0) GameMap.solids.push(m);
+          if (H.parts.indexOf(m) < 0) H.parts.push(m);
+        });
+        b.solidMeshes = null;
+      }
+    }
+    H._headEaten = false;
+    return _resGH.apply(this, arguments);
   };
 })();
 </script>
